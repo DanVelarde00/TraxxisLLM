@@ -18,7 +18,7 @@ import re
 import httpx
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from pydantic import BaseModel, Field, ValidationError
-import edge_tts
+from piper.voice import PiperVoice
 
 # ============================================================
 # Paths & configuration
@@ -38,21 +38,24 @@ OLLAMA_MODEL = "llama3.2:8b"  # FASTER MODELOLLAMA_MODEL = "llama3.1:8b"
 # Whisper model - TINY for speed
 WHISPER_MODEL = "basic"
 
-# Edge-TTS voice selection
-EDGE_TTS_VOICE = "en-US-GuyNeural"
+# Piper TTS voice model (BT-7274 from Titanfall 2!)
+PIPER_MODEL_DIR = BASE_DIR / "piper_models" / "bt7274"
+PIPER_MODEL_PATH = PIPER_MODEL_DIR / "BT7274.onnx"
+PIPER_CONFIG_PATH = PIPER_MODEL_DIR / "BT7274.onnx.json"
 
 app = FastAPI(title="WS Control Server — Voice→LLM→(TTS+ESP32)")
 
 _httpx_client: Optional[httpx.AsyncClient] = None
 _whisper_model = None
+_piper_voice: Optional[PiperVoice] = None
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _httpx_client
+    global _httpx_client, _piper_voice
     _httpx_client = httpx.AsyncClient(timeout=30.0)
     print("[startup] HTTP client ready for Ollama")
-    
+
     # Pre-load Whisper model
     try:
         import whisper
@@ -64,7 +67,19 @@ async def lifespan(app: FastAPI):
         print("[startup] WARNING: whisper not installed. Run: pip install openai-whisper")
     except Exception as e:
         print(f"[startup] WARNING: Failed to load Whisper model: {e}")
-    
+
+    # Pre-load Piper TTS model
+    try:
+        print(f"[startup] Loading Piper TTS model (BT-7274)...")
+        _piper_voice = await asyncio.to_thread(
+            PiperVoice.load,
+            str(PIPER_MODEL_PATH),
+            str(PIPER_CONFIG_PATH)
+        )
+        print("[startup] Piper TTS model loaded successfully")
+    except Exception as e:
+        print(f"[startup] WARNING: Failed to load Piper TTS model: {e}")
+
     try:
         yield
     finally:
@@ -378,7 +393,7 @@ async def transcribe_audio(audio_data: bytes, language: str = "en") -> ASRResult
 
 
 # ============================================================
-# TTS (Edge-TTS - FAST!)
+# TTS (Piper TTS - BT-7274 Voice from Titanfall 2!)
 # ============================================================
 
 def clean_text_for_speech(text):
@@ -389,23 +404,36 @@ def clean_text_for_speech(text):
     text = re.sub(r'[!]{2,}', '!', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
-    
+
 
 async def tts_say(text: str) -> None:
+    global _piper_voice
+
     if not text:
         return
-    
+
+    if _piper_voice is None:
+        log_event("tts_error", error="PiperNotLoaded", detail="Piper voice model not loaded")
+        return
+
     text = clean_text_for_speech(text)
-    
-    output_path = TTS_DIR / f"bt_{int(time.time() * 1000)}.mp3"
-    log_event("tts_synth_start", text=text[:100], voice=EDGE_TTS_VOICE)
-    
+
+    output_path = TTS_DIR / f"bt_{int(time.time() * 1000)}.wav"
+    log_event("tts_synth_start", text=text[:100], voice="BT-7274")
+
     try:
-        communicate = edge_tts.Communicate(text, voice=EDGE_TTS_VOICE)
-        await communicate.save(str(output_path))
-        
+        # Synthesize speech using Piper
+        import wave
+        with wave.open(str(output_path), 'wb') as wav_file:
+            await asyncio.to_thread(
+                _piper_voice.synthesize_wav,
+                text,
+                wav_file
+            )
+
         log_event("tts_synth_complete", file=str(output_path))
-        
+
+        # Play the audio
         if sys.platform == "win32":
             import winsound
             winsound.PlaySound(str(output_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
@@ -415,7 +443,8 @@ async def tts_say(text: str) -> None:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
-        
+
+        # Cleanup old audio files
         async def cleanup():
             await asyncio.sleep(5)
             try:
@@ -423,7 +452,7 @@ async def tts_say(text: str) -> None:
             except:
                 pass
         asyncio.create_task(cleanup())
-        
+
     except Exception as exc:
         log_event("tts_error", error=type(exc).__name__, detail=str(exc)[:200])
         raise
@@ -935,8 +964,9 @@ def status():
         "asr_count": len(asr_log),
         "whisper_model": WHISPER_MODEL,
         "whisper_loaded": _whisper_model is not None,
-        "tts_engine": "edge-tts",
-        "tts_voice": EDGE_TTS_VOICE,
+        "tts_engine": "piper",
+        "tts_voice": "BT-7274 (Titanfall 2)",
+        "tts_loaded": _piper_voice is not None,
         "ollama_model": OLLAMA_MODEL,
     }
 
