@@ -461,18 +461,27 @@ async def llm_plan_from_voice(
     system_prompt = """
 You are BT, a witty robot assistant controlling a Traxxas RC vehicle.
 
-⚠️⚠️⚠️ CRITICAL STEERING RULES - READ CAREFULLY ⚠️⚠️⚠️
+╔═══════════════════════════════════════════════════════════╗
+║  🚨 CRITICAL: STEERING VALUES - DO NOT USE 1500 FOR TURNS 🚨 ║
+╚═══════════════════════════════════════════════════════════╝
 
-STEERING SERVO VALUES (MEMORIZE THIS):
-- 1500 = STRAIGHT AHEAD (neutral - NO TURN)
-- LEFT TURN = Values LESS than 1450 (1050-1450)
-  * "turn left" or "go left" = 1250
-  * "hard left" = 1100
-  * "slight left" = 1400
-- RIGHT TURN = Values GREATER than 1550 (1560-1950)
-  * "turn right" or "go right" = 1750
-  * "hard right" = 1900
-  * "slight right" = 1600
+STEERING RULES (READ TWICE):
+┌─────────────┬──────────────┬────────────────────────┐
+│  Direction  │ Steer Value  │  When to Use           │
+├─────────────┼──────────────┼────────────────────────┤
+│ HARD LEFT   │    1100      │ "hard left"            │
+│ LEFT        │    1250      │ "turn left", "go left" │
+│ SLIGHT LEFT │    1400      │ "slight left"          │
+│ STRAIGHT    │    1500      │ ONLY "forward", "back" │
+│ SLIGHT RIGHT│    1600      │ "slight right"         │
+│ RIGHT       │    1750      │ "turn right"           │
+│ HARD RIGHT  │    1900      │ "hard right"           │
+└─────────────┴──────────────┴────────────────────────┘
+
+🔴 RULE #1: IF user says "LEFT" → steer MUST be < 1450
+🔴 RULE #2: IF user says "RIGHT" → steer MUST be > 1550
+🔴 RULE #3: ONLY use steer=1500 for STRAIGHT forward/backward
+🔴 RULE #4: When in doubt, use 1250 for left, 1750 for right
 
 ⚠️ NEVER USE steer=1500 WHEN USER SAYS "TURN" ⚠️
 ⚠️ LEFT = steer < 1450 | RIGHT = steer > 1550 ⚠️
@@ -542,7 +551,11 @@ REMEMBER:
     
     user_prompt += f"Current command: {transcript.strip()}\n"
     user_prompt += "Respond as JSON. Keys: say (NO special chars), steps (ALL commands).\n"
-    user_prompt += "CRITICAL: Use correct steering - left<1500, right>1500, straight=1500"
+    user_prompt += "\n🚨 STEERING REMINDER:\n"
+    user_prompt += "- If command has 'LEFT' → steer=1250 (or 1100 for hard, 1400 for slight)\n"
+    user_prompt += "- If command has 'RIGHT' → steer=1750 (or 1900 for hard, 1600 for slight)\n"
+    user_prompt += "- If command is 'STRAIGHT/FORWARD' only → steer=1500\n"
+    user_prompt += "- NEVER use steer=1500 for turns!"
     
     if context:
         other_context = {k: v for k, v in context.items() if k != "recent_conversation"}
@@ -606,38 +619,78 @@ REMEMBER:
     # POST-PROCESS AND FIX STEERING
     transcript_lower = transcript.lower()
     clamped_steps: List[Dict[str, Any]] = []
-    
+
+    # Enhanced keyword detection for direction commands
+    left_keywords = [
+        "left", "turn left", "go left", "turning left", "move left",
+        "hang a left", "make a left", "to the left", "turn to the left",
+        "go to the left", "head left", "veer left", "hard left", "slight left"
+    ]
+    right_keywords = [
+        "right", "turn right", "go right", "turning right", "move right",
+        "hang a right", "make a right", "to the right", "turn to the right",
+        "go to the right", "head right", "veer right", "hard right", "slight right"
+    ]
+
+    # Check for directional intent
+    has_left_command = any(keyword in transcript_lower for keyword in left_keywords)
+    has_right_command = any(keyword in transcript_lower for keyword in right_keywords)
+
     for step in steps:
         if not isinstance(step, dict) or "action" not in step:
             continue
-        
+
         action = step["action"]
         processed = dict(step)
-        
+
         # FIX STEERING if LLM got it wrong
         if "steer" in processed:
             steer = processed["steer"]
             original_steer = steer
-            
+
+            # Detect intensity for better steering values
+            is_hard = "hard" in transcript_lower or "sharp" in transcript_lower
+            is_slight = "slight" in transcript_lower or "little" in transcript_lower or "bit" in transcript_lower
+
             # Detect LEFT command
-            if any(word in transcript_lower for word in ["left", "turn left", "go left", "turning left"]):
-                if steer >= 1500:  # LLM used neutral or right
-                    processed["steer"] = 1250  # Force medium left
-                    log_event("steering_fix", 
-                             original=original_steer, 
-                             fixed=1250, 
+            if has_left_command:
+                if steer >= 1500:  # LLM used neutral or right - WRONG!
+                    if is_hard:
+                        processed["steer"] = 1100  # Hard left
+                    elif is_slight:
+                        processed["steer"] = 1400  # Slight left
+                    else:
+                        processed["steer"] = 1250  # Medium left
+                    log_event("steering_fix",
+                             original=original_steer,
+                             fixed=processed["steer"],
                              reason="left_command_detected",
+                             intensity="hard" if is_hard else ("slight" if is_slight else "medium"),
                              transcript=transcript[:50])
-                    
+
             # Detect RIGHT command
-            elif any(word in transcript_lower for word in ["right", "turn right", "go right", "turning right"]):
-                if steer <= 1500:  # LLM used neutral or left
-                    processed["steer"] = 1750  # Force medium right
-                    log_event("steering_fix", 
-                             original=original_steer, 
-                             fixed=1750, 
+            elif has_right_command:
+                if steer <= 1500:  # LLM used neutral or left - WRONG!
+                    if is_hard:
+                        processed["steer"] = 1900  # Hard right
+                    elif is_slight:
+                        processed["steer"] = 1600  # Slight right
+                    else:
+                        processed["steer"] = 1750  # Medium right
+                    log_event("steering_fix",
+                             original=original_steer,
+                             fixed=processed["steer"],
                              reason="right_command_detected",
+                             intensity="hard" if is_hard else ("slight" if is_slight else "medium"),
                              transcript=transcript[:50])
+
+            # Log even when steering is correct (for debugging)
+            else:
+                log_event("steering_check",
+                         steer=steer,
+                         left_detected=has_left_command,
+                         right_detected=has_right_command,
+                         transcript=transcript[:50])
         
         if "speed_pct" in processed:
             try:
