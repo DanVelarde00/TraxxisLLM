@@ -35,8 +35,8 @@ ASR_DIR.mkdir(exist_ok=True)
 OLLAMA_URL = "http://localhost:11434/api/chat"
 OLLAMA_MODEL = "llama3.2:8b"  # FASTER MODELOLLAMA_MODEL = "llama3.1:8b"
 
-# Whisper model - TINY for speed
-WHISPER_MODEL = "basic"
+# Whisper model - BASE for good balance of speed and accuracy
+WHISPER_MODEL = "base"
 
 # Piper TTS voice model (BT-7274 from Titanfall 2!)
 PIPER_MODEL_DIR = BASE_DIR / "piper_models" / "bt7274"

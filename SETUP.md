@@ -219,8 +219,16 @@ OLLAMA_MODEL = "llama3.1:8b"  # or any Ollama model
 ### Adjust Whisper Model
 Edit `server.py` line 39:
 ```python
-WHISPER_MODEL = "tiny"  # Options: tiny, base, small, medium, large
+WHISPER_MODEL = "base"  # Options: tiny, base, small, medium, large, turbo
 ```
+
+Available models:
+- `tiny` - Fastest, least accurate
+- `base` - Good balance (recommended)
+- `small` - Better accuracy, slower
+- `medium` - High accuracy, much slower
+- `large` - Best accuracy, very slow
+- `turbo` - Fast and accurate (newer model)
 
 ### ESP32 Server URL
 Edit `llmreciever.ino`:
