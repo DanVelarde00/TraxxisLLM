@@ -33,7 +33,7 @@ ASR_DIR = BASE_DIR / "asr"
 ASR_DIR.mkdir(exist_ok=True)
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
-OLLAMA_MODEL = "llama3.1:8b"  # Use llama3.1:8b for better steering accuracy
+OLLAMA_MODEL = "llama3.1:70b"  # Larger model for better instruction following
 
 # Whisper model - BASE for good balance of speed and accuracy
 WHISPER_MODEL = "base"
