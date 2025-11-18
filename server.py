@@ -546,49 +546,57 @@ ACTIONS:
 - speak: Say something. Fields: text
 - macro: Named routine. Fields: name, params
 
+🚨 RC CAR PHYSICS - CRITICAL:
+RC cars CANNOT turn in place! They MUST be moving to steer.
+- If steer ≠ 1500 (turning), you MUST also send throt > 1500 (moving)
+- Turning requires SLOW forward movement: throt=1600-1650
+- NEVER send throt=1500 with steer≠1500 (stopped + turned wheels = no turn!)
+
 CRITICAL RULES FOR MULTI-STEP COMMANDS:
 1. "go forward THEN turn" = TWO separate steps (NOT combined!)
-2. Step 1: Move forward with steer=1500 (straight)
-3. Step 2: STOP moving (throt=1500) and ONLY turn wheels (steer≠1500)
-4. NEVER combine forward movement + turning in same step
-5. Each step executes SEQUENTIALLY (waits for previous to finish)
+2. Step 1: Move forward fast with steer=1500 (straight)
+3. Step 2: Move forward SLOW with steer≠1500 (turning while moving)
+4. Each step executes SEQUENTIALLY (waits for previous to finish)
 
 EXAMPLES - CRITICAL:
 
 User: "turn right"
-✓ CORRECT: {"say": "Turning right", "steps": [{"action": "move_time", "throt": 1500, "steer": 1750, "time_ms": 1000}]}
-✗ WRONG: steer=1500 (that's straight, not a turn!)
+✓ CORRECT: {"say": "Turning right", "steps": [{"action": "move_time", "throt": 1600, "steer": 1750, "time_ms": 2000}]}
+✗ WRONG: {"throt": 1500, "steer": 1750} ← Car won't turn if stopped!
 
 User: "turn left"
-✓ CORRECT: {"say": "Going left", "steps": [{"action": "move_time", "throt": 1500, "steer": 1250, "time_ms": 1000}]}
-✗ WRONG: steer=1500 is WRONG for left turn!
+✓ CORRECT: {"say": "Going left", "steps": [{"action": "move_time", "throt": 1600, "steer": 1250, "time_ms": 2000}]}
+✗ WRONG: {"throt": 1500, "steer": 1250} ← No movement = no turn!
 
 User: "go forward then turn right"
 ✓ CORRECT (TWO STEPS): {"say": "On it", "steps": [
-    {"action": "move_time", "throt": 1650, "steer": 1500, "time_ms": 2000},
-    {"action": "move_time", "throt": 1500, "steer": 1750, "time_ms": 1000}
+    {"action": "move_time", "throt": 1700, "steer": 1500, "time_ms": 3000},
+    {"action": "move_time", "throt": 1600, "steer": 1750, "time_ms": 2000}
 ]}
-✗ WRONG (ONE STEP): [{"action": "move_time", "throt": 1650, "steer": 1750, "time_ms": 2000}]
-  (This would turn WHILE moving - incorrect!)
+✗ WRONG: Step 2 with throt=1500 won't turn!
 
 User: "go forward for 10 feet and turn left for 5 seconds"
 ✓ CORRECT (TWO STEPS): {"say": "Moving forward then turning left", "steps": [
-    {"action": "move_dist", "throt": 1650, "steer": 1500, "feet": 10},
-    {"action": "move_time", "throt": 1500, "steer": 1250, "time_ms": 5000}
+    {"action": "move_dist", "throt": 1700, "steer": 1500, "feet": 10},
+    {"action": "move_time", "throt": 1600, "steer": 1250, "time_ms": 5000}
 ]}
 
 User: "drive forward fast and make a hard right turn"
 ✓ CORRECT (TWO STEPS): {"say": "Going fast then hard right", "steps": [
-    {"action": "move_time", "throt": 1800, "steer": 1500, "time_ms": 2000},
-    {"action": "move_time", "throt": 1500, "steer": 1900, "time_ms": 1500}
+    {"action": "move_time", "throt": 1800, "steer": 1500, "time_ms": 3000},
+    {"action": "move_time", "throt": 1620, "steer": 1900, "time_ms": 2500}
 ]}
+
+User: "just turn left a bit"
+✓ CORRECT: {"say": "Turning left", "steps": [{"action": "move_time", "throt": 1600, "steer": 1400, "time_ms": 1500}]}
 
 REMEMBER:
 - Return ALL steps needed sequentially
 - "then" or "and then" = SEPARATE steps
-- Forward movement = throt>1500, steer=1500
-- Turning = throt=1500, steer≠1500
-- NEVER mix forward + turn in one step
+- Straight movement = throt=1650-1800, steer=1500
+- Turning = throt=1600-1650 (SLOW forward), steer≠1500
+- NEVER use throt=1500 with steer≠1500 (car won't turn!)
+- RC cars need movement to steer!
 """
 
     user_prompt = ""
@@ -603,12 +611,12 @@ REMEMBER:
     user_prompt += f"Current command: {transcript.strip()}\n"
     user_prompt += "Respond as JSON. Keys: say (NO special chars), steps (ALL commands).\n"
     user_prompt += "\n🚨 CRITICAL REMINDERS:\n"
+    user_prompt += "- RC cars MUST be moving to turn! If steer≠1500, then throt MUST be >1500!\n"
     user_prompt += "- If command has 'THEN' or multiple actions → CREATE SEPARATE STEPS!\n"
-    user_prompt += "- Forward movement: throt=1650, steer=1500 (straight)\n"
-    user_prompt += "- Turning ONLY: throt=1500 (stopped), steer=1250 (left) or steer=1750 (right)\n"
-    user_prompt += "- NEVER combine forward + turn in same step!\n"
-    user_prompt += "- LEFT turns → steer=1250 (hard=1100, slight=1400)\n"
-    user_prompt += "- RIGHT turns → steer=1750 (hard=1900, slight=1600)\n"
+    user_prompt += "- Straight forward: throt=1650-1700, steer=1500\n"
+    user_prompt += "- Turning LEFT: throt=1600-1650 (MOVING!), steer=1250 (hard=1100, slight=1400)\n"
+    user_prompt += "- Turning RIGHT: throt=1600-1650 (MOVING!), steer=1750 (hard=1900, slight=1600)\n"
+    user_prompt += "- NEVER send throt=1500 with steer≠1500 (car won't turn if stopped!)\n"
     user_prompt += "- NEVER use steer=1500 for turns!"
     
     if context:
@@ -745,7 +753,23 @@ REMEMBER:
                          left_detected=has_left_command,
                          right_detected=has_right_command,
                          transcript=transcript[:50])
-        
+
+            # RC CAR PHYSICS FIX: If turning (steer != 1500), MUST be moving (throt > 1500)
+            if "throt" in processed:
+                current_steer = processed["steer"]
+                current_throt = processed["throt"]
+
+                # If steering is NOT straight (turning), but throttle is neutral (stopped)
+                if current_steer != 1500 and current_throt <= 1500:
+                    original_throt = current_throt
+                    processed["throt"] = 1620  # Slow forward movement for turning
+                    log_event("throttle_fix",
+                             original_throt=original_throt,
+                             fixed_throt=1620,
+                             steer=current_steer,
+                             reason="RC_car_needs_movement_to_turn",
+                             transcript=transcript[:50])
+
         if "speed_pct" in processed:
             try:
                 spd = int(processed["speed_pct"])
