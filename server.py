@@ -33,10 +33,10 @@ ASR_DIR = BASE_DIR / "asr"
 ASR_DIR.mkdir(exist_ok=True)
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
-OLLAMA_MODEL = "llama3.1:70b"  # Larger model for better instruction following
+OLLAMA_MODEL = "qwen2.5:14b"  # Fast mid-size model with excellent instruction following
 
-# Whisper model - BASE for good balance of speed and accuracy
-WHISPER_MODEL = "base"
+# Whisper model - TINY for maximum speed (good enough for commands)
+WHISPER_MODEL = "tiny"
 
 # Piper TTS voice model (BT-7274 from Titanfall 2!)
 PIPER_MODEL_DIR = BASE_DIR / "piper_models" / "bt7274"
@@ -495,31 +495,34 @@ You are BT, a witty robot assistant controlling a Traxxas RC vehicle.
 ╚═══════════════════════════════════════════════════════════╝
 
 STEERING RULES (READ TWICE):
+⚠️ IMPORTANT: This RC car's chassis is warped - 1400 is STRAIGHT, not 1500!
+
 ┌─────────────┬──────────────┬────────────────────────┐
 │  Direction  │ Steer Value  │  When to Use           │
 ├─────────────┼──────────────┼────────────────────────┤
-│ HARD LEFT   │    1100      │ "hard left"            │
-│ LEFT        │    1250      │ "turn left", "go left" │
-│ SLIGHT LEFT │    1400      │ "slight left"          │
-│ STRAIGHT    │    1500      │ ONLY "forward", "back" │
-│ SLIGHT RIGHT│    1600      │ "slight right"         │
-│ RIGHT       │    1750      │ "turn right"           │
-│ HARD RIGHT  │    1900      │ "hard right"           │
+│ HARD LEFT   │    1000      │ "hard left"            │
+│ LEFT        │    1150      │ "turn left", "go left" │
+│ SLIGHT LEFT │    1300      │ "slight left"          │
+│ STRAIGHT    │    1400      │ STRAIGHT forward/back  │
+│ SLIGHT RIGHT│    1500      │ "slight right"         │
+│ RIGHT       │    1650      │ "turn right"           │
+│ HARD RIGHT  │    1800      │ "hard right"           │
 └─────────────┴──────────────┴────────────────────────┘
 
-🔴 RULE #1: IF user says "LEFT" → steer MUST be < 1450
-🔴 RULE #2: IF user says "RIGHT" → steer MUST be > 1550
-🔴 RULE #3: ONLY use steer=1500 for STRAIGHT forward/backward
-🔴 RULE #4: When in doubt, use 1250 for left, 1750 for right
+🔴 RULE #1: IF user says "LEFT" → steer MUST be < 1350
+🔴 RULE #2: IF user says "RIGHT" → steer MUST be > 1450
+🔴 RULE #3: ONLY use steer=1400 for STRAIGHT forward/backward
+🔴 RULE #4: When in doubt, use 1150 for left, 1650 for right
 
-⚠️ NEVER USE steer=1500 WHEN USER SAYS "TURN" ⚠️
-⚠️ LEFT = steer < 1450 | RIGHT = steer > 1550 ⚠️
+⚠️ NEVER USE steer=1400 WHEN USER SAYS "TURN" ⚠️
+⚠️ LEFT = steer < 1350 | RIGHT = steer > 1450 | STRAIGHT = 1400 ⚠️
 
-THROTTLE VALUES:
+THROTTLE VALUES (FASTER SPEEDS):
 - 1500 = STOPPED (neutral)
-- Forward: 1575-1700 (slow to medium)
-- Reverse: 1300-1450
-- Fast forward: 1800+ (only if user says "fast")
+- Slow forward: 1650-1700
+- Normal forward: 1750-1850
+- Fast forward: 1900-2000 (only if user says "fast")
+- Reverse: 1300-1400
 
 PERSONALITY:
 - Funny and sarcastic, NOT creepy
@@ -548,54 +551,73 @@ ACTIONS:
 
 🚨 RC CAR PHYSICS - CRITICAL:
 RC cars CANNOT turn in place! They MUST be moving to steer.
-- If steer ≠ 1500 (turning), you MUST also send throt > 1500 (moving)
-- Turning requires SLOW forward movement: throt=1600-1650
-- NEVER send throt=1500 with steer≠1500 (stopped + turned wheels = no turn!)
+- If steer ≠ 1400 (turning), you MUST also send throt > 1500 (moving)
+- Turning requires forward movement: throt=1650-1700
+- NEVER send throt=1500 with steer≠1400 (stopped + turned wheels = no turn!)
 
 CRITICAL RULES FOR MULTI-STEP COMMANDS:
 1. "go forward THEN turn" = TWO separate steps (NOT combined!)
-2. Step 1: Move forward fast with steer=1500 (straight)
-3. Step 2: Move forward SLOW with steer≠1500 (turning while moving)
+2. Step 1: Move forward fast with steer=1400 (straight)
+3. Step 2: Move forward with steer≠1400 (turning while moving)
 4. Each step executes SEQUENTIALLY (waits for previous to finish)
+
+CONTINUOUS COMMANDS:
+- "keep turning", "drive in a circle", "until I say stop" = Use LONG time_ms (60000+ = 1 min)
+- Robot will execute until new command arrives or timeout
+- Example: "keep turning left" → time_ms: 120000 (2 minutes)
+
+DISTANCE VS TIME:
+- move_dist (feet/distance) = Robot moves UNTIL encoder reaches distance, NO time limit
+- move_time (time_ms) = Robot moves for EXACT time duration
+- NEVER mix them! Distance commands ignore time_ms, time commands ignore feet
 
 EXAMPLES - CRITICAL:
 
 User: "turn right"
-✓ CORRECT: {"say": "Turning right", "steps": [{"action": "move_time", "throt": 1600, "steer": 1750, "time_ms": 2000}]}
-✗ WRONG: {"throt": 1500, "steer": 1750} ← Car won't turn if stopped!
+✓ CORRECT: {"say": "Turning right", "steps": [{"action": "move_time", "throt": 1700, "steer": 1650, "time_ms": 2000}]}
+✗ WRONG: {"throt": 1500, "steer": 1650} ← Car won't turn if stopped!
 
 User: "turn left"
-✓ CORRECT: {"say": "Going left", "steps": [{"action": "move_time", "throt": 1600, "steer": 1250, "time_ms": 2000}]}
-✗ WRONG: {"throt": 1500, "steer": 1250} ← No movement = no turn!
+✓ CORRECT: {"say": "Going left", "steps": [{"action": "move_time", "throt": 1700, "steer": 1150, "time_ms": 2000}]}
+✗ WRONG: {"throt": 1500, "steer": 1150} ← No movement = no turn!
+
+User: "go forward"
+✓ CORRECT: {"say": "Moving forward", "steps": [{"action": "move_time", "throt": 1800, "steer": 1400, "time_ms": 3000}]}
+Note: steer=1400 for STRAIGHT (chassis warp compensation)
 
 User: "go forward then turn right"
 ✓ CORRECT (TWO STEPS): {"say": "On it", "steps": [
-    {"action": "move_time", "throt": 1700, "steer": 1500, "time_ms": 3000},
-    {"action": "move_time", "throt": 1600, "steer": 1750, "time_ms": 2000}
+    {"action": "move_time", "throt": 1800, "steer": 1400, "time_ms": 3000},
+    {"action": "move_time", "throt": 1700, "steer": 1650, "time_ms": 2000}
 ]}
 ✗ WRONG: Step 2 with throt=1500 won't turn!
 
 User: "go forward for 10 feet and turn left for 5 seconds"
 ✓ CORRECT (TWO STEPS): {"say": "Moving forward then turning left", "steps": [
-    {"action": "move_dist", "throt": 1700, "steer": 1500, "feet": 10},
-    {"action": "move_time", "throt": 1600, "steer": 1250, "time_ms": 5000}
+    {"action": "move_dist", "throt": 1800, "steer": 1400, "feet": 10},
+    {"action": "move_time", "throt": 1700, "steer": 1150, "time_ms": 5000}
 ]}
+Note: move_dist has NO time_ms, move_time has NO feet
 
-User: "drive forward fast and make a hard right turn"
-✓ CORRECT (TWO STEPS): {"say": "Going fast then hard right", "steps": [
-    {"action": "move_time", "throt": 1800, "steer": 1500, "time_ms": 3000},
-    {"action": "move_time", "throt": 1620, "steer": 1900, "time_ms": 2500}
-]}
+User: "drive forward fast"
+✓ CORRECT: {"say": "Going fast", "steps": [{"action": "move_time", "throt": 1950, "steer": 1400, "time_ms": 3000}]}
 
-User: "just turn left a bit"
-✓ CORRECT: {"say": "Turning left", "steps": [{"action": "move_time", "throt": 1600, "steer": 1400, "time_ms": 1500}]}
+User: "keep turning left until I say stop"
+✓ CORRECT: {"say": "Turning left continuously", "steps": [{"action": "move_time", "throt": 1700, "steer": 1150, "time_ms": 120000}]}
+Note: 120000ms = 2 minutes, long enough to wait for stop command
+
+User: "drive in a circle"
+✓ CORRECT: {"say": "Circling", "steps": [{"action": "move_time", "throt": 1750, "steer": 1650, "time_ms": 60000}]}
+Note: Constant turn + forward = circle motion
 
 REMEMBER:
 - Return ALL steps needed sequentially
 - "then" or "and then" = SEPARATE steps
-- Straight movement = throt=1650-1800, steer=1500
-- Turning = throt=1600-1650 (SLOW forward), steer≠1500
-- NEVER use throt=1500 with steer≠1500 (car won't turn!)
+- Straight movement = throt=1750-1850, steer=1400
+- Turning = throt=1650-1750 (MOVING forward), steer≠1400
+- Continuous commands = very long time_ms (60000-120000)
+- Distance commands (move_dist) have NO time_ms!
+- NEVER use throt=1500 with steer≠1400 (car won't turn!)
 - RC cars need movement to steer!
 """
 
@@ -611,13 +633,15 @@ REMEMBER:
     user_prompt += f"Current command: {transcript.strip()}\n"
     user_prompt += "Respond as JSON. Keys: say (NO special chars), steps (ALL commands).\n"
     user_prompt += "\n🚨 CRITICAL REMINDERS:\n"
-    user_prompt += "- RC cars MUST be moving to turn! If steer≠1500, then throt MUST be >1500!\n"
+    user_prompt += "- CHASSIS WARP: steer=1400 is STRAIGHT, not 1500!\n"
+    user_prompt += "- RC cars MUST be moving to turn! If steer≠1400, then throt MUST be >1500!\n"
     user_prompt += "- If command has 'THEN' or multiple actions → CREATE SEPARATE STEPS!\n"
-    user_prompt += "- Straight forward: throt=1650-1700, steer=1500\n"
-    user_prompt += "- Turning LEFT: throt=1600-1650 (MOVING!), steer=1250 (hard=1100, slight=1400)\n"
-    user_prompt += "- Turning RIGHT: throt=1600-1650 (MOVING!), steer=1750 (hard=1900, slight=1600)\n"
-    user_prompt += "- NEVER send throt=1500 with steer≠1500 (car won't turn if stopped!)\n"
-    user_prompt += "- NEVER use steer=1500 for turns!"
+    user_prompt += "- Straight forward: throt=1750-1850, steer=1400\n"
+    user_prompt += "- Turning LEFT: throt=1650-1750 (MOVING!), steer=1150 (hard=1000, slight=1300)\n"
+    user_prompt += "- Turning RIGHT: throt=1650-1750 (MOVING!), steer=1650 (hard=1800, slight=1500)\n"
+    user_prompt += "- Continuous ('keep doing X'): time_ms=60000-120000 (1-2 minutes)\n"
+    user_prompt += "- Distance commands (move_dist): NO time_ms! Time commands (move_time): NO feet!\n"
+    user_prompt += "- NEVER send throt=1500 with steer≠1400 (car won't turn if stopped!)"
     
     if context:
         other_context = {k: v for k, v in context.items() if k != "recent_conversation"}
@@ -633,9 +657,11 @@ REMEMBER:
         "stream": False,
         "format": "json",
         "options": {
-            "temperature": 0.3,
-            "num_predict": 300,
-            "num_ctx": 2048
+            "temperature": 0.1,  # Lower = faster, more deterministic
+            "num_predict": 200,  # Reduced for faster generation
+            "num_ctx": 1024,     # Reduced context window for speed
+            "top_k": 10,         # Limit token sampling for speed
+            "top_p": 0.9         # Nucleus sampling for quality
         },
     }
 
@@ -716,13 +742,13 @@ REMEMBER:
 
             # Detect LEFT command
             if has_left_command:
-                if steer >= 1500:  # LLM used neutral or right - WRONG!
+                if steer >= 1400:  # LLM used neutral or right - WRONG!
                     if is_hard:
-                        processed["steer"] = 1100  # Hard left
+                        processed["steer"] = 1000  # Hard left
                     elif is_slight:
-                        processed["steer"] = 1400  # Slight left
+                        processed["steer"] = 1300  # Slight left
                     else:
-                        processed["steer"] = 1250  # Medium left
+                        processed["steer"] = 1150  # Medium left
                     log_event("steering_fix",
                              original=original_steer,
                              fixed=processed["steer"],
@@ -732,13 +758,13 @@ REMEMBER:
 
             # Detect RIGHT command
             elif has_right_command:
-                if steer <= 1500:  # LLM used neutral or left - WRONG!
+                if steer <= 1400:  # LLM used neutral or left - WRONG!
                     if is_hard:
-                        processed["steer"] = 1900  # Hard right
+                        processed["steer"] = 1800  # Hard right
                     elif is_slight:
-                        processed["steer"] = 1600  # Slight right
+                        processed["steer"] = 1500  # Slight right
                     else:
-                        processed["steer"] = 1750  # Medium right
+                        processed["steer"] = 1650  # Medium right
                     log_event("steering_fix",
                              original=original_steer,
                              fixed=processed["steer"],
@@ -754,20 +780,31 @@ REMEMBER:
                          right_detected=has_right_command,
                          transcript=transcript[:50])
 
-            # RC CAR PHYSICS FIX: If turning (steer != 1500), MUST be moving (throt > 1500)
+            # RC CAR PHYSICS FIX: If turning (steer != 1400), MUST be moving (throt > 1500)
             if "throt" in processed:
                 current_steer = processed["steer"]
                 current_throt = processed["throt"]
 
                 # If steering is NOT straight (turning), but throttle is neutral (stopped)
-                if current_steer != 1500 and current_throt <= 1500:
+                if current_steer != 1400 and current_throt <= 1500:
                     original_throt = current_throt
-                    processed["throt"] = 1620  # Slow forward movement for turning
+                    processed["throt"] = 1700  # Forward movement for turning
                     log_event("throttle_fix",
                              original_throt=original_throt,
-                             fixed_throt=1620,
+                             fixed_throt=1700,
                              steer=current_steer,
                              reason="RC_car_needs_movement_to_turn",
+                             transcript=transcript[:50])
+
+                # If throttle is too slow (less than 1650), boost it for better performance
+                elif current_throt > 1500 and current_throt < 1650:
+                    original_throt = current_throt
+                    processed["throt"] = 1750  # Minimum decent speed
+                    log_event("throttle_boost",
+                             original_throt=original_throt,
+                             fixed_throt=1750,
+                             steer=current_steer,
+                             reason="Minimum_speed_boost",
                              transcript=transcript[:50])
 
         if "speed_pct" in processed:
@@ -776,10 +813,37 @@ REMEMBER:
             except Exception:
                 spd = 30
             processed["speed_pct"] = max(10, min(70, spd))
-            
+
+        # Timeout handling: distance commands should NOT have time limits
         if "timeout_ms" not in processed:
-            processed["timeout_ms"] = 6000 if action == "move_distance" else 4000
-            
+            if action == "move_dist" or action == "move_distance":
+                # Distance commands: very long timeout, rely on encoder
+                processed["timeout_ms"] = 60000  # 60 seconds max for safety
+            else:
+                # Time commands: normal timeout
+                processed["timeout_ms"] = 5000
+
+        # Remove time_ms from distance commands (shouldn't mix)
+        if action in ["move_dist", "move_distance"] and "time_ms" in processed:
+            log_event("distance_cmd_fix",
+                     action=action,
+                     removed_time_ms=processed["time_ms"],
+                     reason="distance_commands_ignore_time",
+                     transcript=transcript[:50])
+            del processed["time_ms"]
+
+        # Remove feet/distance from time commands (shouldn't mix)
+        if action == "move_time":
+            for dist_key in ["feet", "distance", "dist"]:
+                if dist_key in processed:
+                    log_event("time_cmd_fix",
+                             action=action,
+                             removed_key=dist_key,
+                             removed_value=processed[dist_key],
+                             reason="time_commands_ignore_distance",
+                             transcript=transcript[:50])
+                    del processed[dist_key]
+
         clamped_steps.append(processed)
 
     intent_id = f"vi_{int(time.time() * 1000)}"
