@@ -515,6 +515,13 @@ JSON FORMAT (REQUIRED):
   ]
 }
 
+CRITICAL - EXACT FIELD NAMES (use these EXACTLY, not variations!):
+- "throt" NOT "throttle" or "speed"
+- "steer" NOT "steering" or "turn"
+- "time_ms" NOT "duration" or "time"
+- "feet" NOT "distance" or "dist"
+- "action" must be EXACTLY "move_time" or "move_dist" (NOT "drive", "go", etc)
+
 EXAMPLES:
 
 "go forward":
@@ -584,11 +591,11 @@ RULES:
         "stream": False,
         "format": "json",
         "options": {
-            "temperature": 0.05,  # Very low = faster, more deterministic
-            "num_predict": 100,   # Reduced even more - JSON is short
+            "temperature": 0.15,  # Low but not too low - needs some creativity
+            "num_predict": 150,   # Enough for multi-step JSON (was too low at 100)
             "num_ctx": 1024,      # Reduced context window for speed
-            "top_k": 5,           # Lower = faster sampling
-            "top_p": 0.85         # Lower = faster, still good quality
+            "top_k": 10,          # Balanced sampling
+            "top_p": 0.9          # Good quality
         },
     }
 
