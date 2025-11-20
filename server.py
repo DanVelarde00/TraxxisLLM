@@ -645,8 +645,7 @@ RULES:
         # Parse transcript to create reasonable default
         transcript_lower = transcript.lower()
 
-        # Extract distance if mentioned
-        import re
+        # Extract distance if mentioned (re is already imported at module level)
         distance_match = re.search(r'(\d+)\s*(?:feet|foot|ft)', transcript_lower)
 
         if distance_match:
