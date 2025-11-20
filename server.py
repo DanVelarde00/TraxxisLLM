@@ -765,32 +765,32 @@ RULES:
                      steering_fixes_disabled=not apply_steering_fixes,
                      transcript=transcript[:50])
 
-            # RC CAR PHYSICS FIX: If turning (steer != 1400), MUST be moving (throt > 1500)
-            if "throt" in processed:
-                current_steer = processed["steer"]
-                current_throt = processed["throt"]
+        # RC CAR PHYSICS FIX: If turning (steer != 1400), MUST be moving (throt > 1500)
+        if "throt" in processed:
+            current_steer = processed["steer"]
+            current_throt = processed["throt"]
 
-                # If steering is NOT straight (turning), but throttle is neutral (stopped)
-                if current_steer != 1400 and current_throt <= 1500:
-                    original_throt = current_throt
-                    processed["throt"] = 1700  # Forward movement for turning
-                    log_event("throttle_fix",
-                             original_throt=original_throt,
-                             fixed_throt=1700,
-                             steer=current_steer,
-                             reason="RC_car_needs_movement_to_turn",
-                             transcript=transcript[:50])
+            # If steering is NOT straight (turning), but throttle is neutral (stopped)
+            if current_steer != 1400 and current_throt <= 1500:
+                original_throt = current_throt
+                processed["throt"] = 1700  # Forward movement for turning
+                log_event("throttle_fix",
+                         original_throt=original_throt,
+                         fixed_throt=1700,
+                         steer=current_steer,
+                         reason="RC_car_needs_movement_to_turn",
+                         transcript=transcript[:50])
 
-                # If throttle is too slow (less than 1650), boost it for better performance
-                elif current_throt > 1500 and current_throt < 1650:
-                    original_throt = current_throt
-                    processed["throt"] = 1750  # Minimum decent speed
-                    log_event("throttle_boost",
-                             original_throt=original_throt,
-                             fixed_throt=1750,
-                             steer=current_steer,
-                             reason="Minimum_speed_boost",
-                             transcript=transcript[:50])
+            # If throttle is too slow (less than 1650), boost it for better performance
+            elif current_throt > 1500 and current_throt < 1650:
+                original_throt = current_throt
+                processed["throt"] = 1750  # Minimum decent speed
+                log_event("throttle_boost",
+                         original_throt=original_throt,
+                         fixed_throt=1750,
+                         steer=current_steer,
+                         reason="Minimum_speed_boost",
+                         transcript=transcript[:50])
 
         if "speed_pct" in processed:
             try:
