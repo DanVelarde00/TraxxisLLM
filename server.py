@@ -515,6 +515,13 @@ JSON FORMAT (REQUIRED):
   ]
 }
 
+CRITICAL - EXACT FIELD NAMES (use these EXACTLY, not variations!):
+- "throt" NOT "throttle" or "speed"
+- "steer" NOT "steering" or "turn"
+- "time_ms" NOT "duration" or "time"
+- "feet" NOT "distance" or "dist"
+- "action" must be EXACTLY "move_time" or "move_dist" (NOT "drive", "go", etc)
+
 EXAMPLES:
 
 "go forward":
@@ -535,6 +542,12 @@ EXAMPLES:
   {"action": "move_time", "throt": 1700, "steer": 1650, "time_ms": 2000}
 ]}
 
+"move forward 5 feet then turn left":
+{"say": "Forward then left", "steps": [
+  {"action": "move_dist", "throt": 1800, "steer": 1400, "feet": 5},
+  {"action": "move_time", "throt": 1700, "steer": 1150, "time_ms": 2000}
+]}
+
 "drive in a circle":
 {"say": "Circling", "steps": [{"action": "move_time", "throt": 1750, "steer": 1650, "time_ms": 60000}]}
 
@@ -544,12 +557,11 @@ EXAMPLES:
 RULES:
 - ALWAYS include "steps" array (never empty!)
 - Continuous commands ("circle", "keep doing X") = ONE step with long time_ms (60000+)
-- Multi-step commands ("then", "and then") = multiple objects in steps array
+- Multi-step commands with "THEN" = multiple steps, first step STRAIGHT, second step TURNS
+  Example: "go forward then turn left" = [{steer:1400}, {steer:1150}]
 - Distance commands (move_dist) use "feet", NOT "time_ms"
 - Time commands (move_time) use "time_ms", NOT "feet"
-- Straight = steer 1400
-- Left = steer 1150
-- Right = steer 1650
+- Straight = steer 1400, Left = steer 1150, Right = steer 1650
 """
 
     user_prompt = ""
@@ -579,11 +591,11 @@ RULES:
         "stream": False,
         "format": "json",
         "options": {
-            "temperature": 0.1,  # Lower = faster, more deterministic
-            "num_predict": 200,  # Reduced for faster generation
-            "num_ctx": 1024,     # Reduced context window for speed
-            "top_k": 10,         # Limit token sampling for speed
-            "top_p": 0.9         # Nucleus sampling for quality
+            "temperature": 0.15,  # Low but not too low - needs some creativity
+            "num_predict": 150,   # Enough for multi-step JSON (was too low at 100)
+            "num_ctx": 1024,      # Reduced context window for speed
+            "top_k": 10,          # Balanced sampling
+            "top_p": 0.9          # Good quality
         },
     }
 
@@ -623,6 +635,38 @@ RULES:
     if not isinstance(steps, list):
         steps = []
 
+    # DEBUG: Log what LLM actually returned
+    log_event("llm_raw_response",
+             say=say[:50],
+             steps_count=len(steps),
+             steps_raw=steps[:3] if steps else "EMPTY",
+             transcript=transcript[:50])
+
+    # CRITICAL: If LLM generated empty steps, create a default step based on transcript
+    if len(steps) == 0:
+        log_event("empty_steps_fallback",
+                 transcript=transcript[:50],
+                 say=say,
+                 reason="LLM_generated_empty_steps_creating_default")
+
+        # Parse transcript to create reasonable default
+        transcript_lower = transcript.lower()
+
+        # Extract distance if mentioned (re is already imported at module level)
+        distance_match = re.search(r'(\d+)\s*(?:feet|foot|ft)', transcript_lower)
+
+        if distance_match:
+            # Distance command
+            feet = float(distance_match.group(1))
+            steps = [{"action": "move_dist", "throt": 1800, "steer": 1400, "feet": feet}]
+            if not say:
+                say = f"Moving {feet} feet"
+        else:
+            # Default: move forward for 3 seconds
+            steps = [{"action": "move_time", "throt": 1800, "steer": 1400, "time_ms": 3000}]
+            if not say:
+                say = "Moving forward"
+
     # Clean asterisks
     say = re.sub(r'[*_~`]', '', say)
 
@@ -646,15 +690,80 @@ RULES:
     has_left_command = any(keyword in transcript_lower for keyword in left_keywords)
     has_right_command = any(keyword in transcript_lower for keyword in right_keywords)
 
+    # Detect multi-step commands - DON'T apply blanket steering fixes if detected
+    is_multistep = any(keyword in transcript_lower for keyword in ["then", "and then", "after that"])
+
+    # Only apply aggressive steering fixes for SINGLE-step commands
+    # Multi-step commands should trust the LLM to get the sequence right
+    apply_steering_fixes = (len(steps) == 1 and not is_multistep)
+
+    # DEBUG: Log steps before post-processing loop
+    log_event("before_postprocess",
+             steps_count=len(steps),
+             steps_preview=steps[:2] if steps else "EMPTY",
+             transcript=transcript[:50])
+
     for step in steps:
-        if not isinstance(step, dict) or "action" not in step:
+        if not isinstance(step, dict):
             continue
+
+        # CRITICAL FIX: If LLM forgot "action" field, infer it
+        if "action" not in step:
+            # Infer action type from fields present
+            if "feet" in step or "distance" in step:
+                step["action"] = "move_dist"
+                log_event("action_inferred",
+                         inferred="move_dist",
+                         reason="has_feet_or_distance",
+                         step_fields=list(step.keys()),
+                         transcript=transcript[:50])
+            else:
+                # Default to move_time
+                step["action"] = "move_time"
+                log_event("action_inferred",
+                         inferred="move_time",
+                         reason="default_or_has_duration",
+                         step_fields=list(step.keys()),
+                         transcript=transcript[:50])
 
         action = step["action"]
         processed = dict(step)
 
-        # FIX STEERING if LLM got it wrong
-        if "steer" in processed:
+        # Convert "duration" to "time_ms" if LLM used wrong field name
+        if "duration" in processed and "time_ms" not in processed:
+            duration_val = processed.pop("duration")
+            # Assume duration is in seconds if < 100, else milliseconds
+            if isinstance(duration_val, (int, float)):
+                if duration_val < 100:
+                    processed["time_ms"] = int(duration_val * 1000)
+                else:
+                    processed["time_ms"] = int(duration_val)
+                log_event("duration_converted",
+                         original=duration_val,
+                         time_ms=processed["time_ms"],
+                         transcript=transcript[:50])
+
+        # ADD MISSING REQUIRED FIELDS (defensive programming)
+        if action == "move_time" and "time_ms" not in processed:
+            # LLM forgot time_ms! Add default based on command
+            processed["time_ms"] = 3000  # 3 seconds default
+            log_event("time_ms_added",
+                     action=action,
+                     default_time_ms=3000,
+                     reason="LLM_forgot_time_ms",
+                     transcript=transcript[:50])
+
+        if action in ["move_dist", "move_distance"] and "feet" not in processed:
+            # LLM forgot distance! This is critical - default to 5 feet
+            processed["feet"] = 5.0
+            log_event("feet_added",
+                     action=action,
+                     default_feet=5.0,
+                     reason="LLM_forgot_distance",
+                     transcript=transcript[:50])
+
+        # FIX STEERING if LLM got it wrong (ONLY for single-step commands!)
+        if "steer" in processed and apply_steering_fixes:
             steer = processed["steer"]
             original_steer = steer
 
@@ -674,7 +783,7 @@ RULES:
                     log_event("steering_fix",
                              original=original_steer,
                              fixed=processed["steer"],
-                             reason="left_command_detected",
+                             reason="left_command_detected_single_step",
                              intensity="hard" if is_hard else ("slight" if is_slight else "medium"),
                              transcript=transcript[:50])
 
@@ -690,44 +799,44 @@ RULES:
                     log_event("steering_fix",
                              original=original_steer,
                              fixed=processed["steer"],
-                             reason="right_command_detected",
+                             reason="right_command_detected_single_step",
                              intensity="hard" if is_hard else ("slight" if is_slight else "medium"),
                              transcript=transcript[:50])
 
-            # Log even when steering is correct (for debugging)
-            else:
-                log_event("steering_check",
-                         steer=steer,
-                         left_detected=has_left_command,
-                         right_detected=has_right_command,
+        # Log multi-step detection (for debugging)
+        if is_multistep or len(steps) > 1:
+            log_event("multistep_detected",
+                     step_count=len(steps),
+                     is_multistep_keyword=is_multistep,
+                     steering_fixes_disabled=not apply_steering_fixes,
+                     transcript=transcript[:50])
+
+        # RC CAR PHYSICS FIX: If turning (steer != 1400), MUST be moving (throt > 1500)
+        if "throt" in processed:
+            current_steer = processed["steer"]
+            current_throt = processed["throt"]
+
+            # If steering is NOT straight (turning), but throttle is neutral (stopped)
+            if current_steer != 1400 and current_throt <= 1500:
+                original_throt = current_throt
+                processed["throt"] = 1700  # Forward movement for turning
+                log_event("throttle_fix",
+                         original_throt=original_throt,
+                         fixed_throt=1700,
+                         steer=current_steer,
+                         reason="RC_car_needs_movement_to_turn",
                          transcript=transcript[:50])
 
-            # RC CAR PHYSICS FIX: If turning (steer != 1400), MUST be moving (throt > 1500)
-            if "throt" in processed:
-                current_steer = processed["steer"]
-                current_throt = processed["throt"]
-
-                # If steering is NOT straight (turning), but throttle is neutral (stopped)
-                if current_steer != 1400 and current_throt <= 1500:
-                    original_throt = current_throt
-                    processed["throt"] = 1700  # Forward movement for turning
-                    log_event("throttle_fix",
-                             original_throt=original_throt,
-                             fixed_throt=1700,
-                             steer=current_steer,
-                             reason="RC_car_needs_movement_to_turn",
-                             transcript=transcript[:50])
-
-                # If throttle is too slow (less than 1650), boost it for better performance
-                elif current_throt > 1500 and current_throt < 1650:
-                    original_throt = current_throt
-                    processed["throt"] = 1750  # Minimum decent speed
-                    log_event("throttle_boost",
-                             original_throt=original_throt,
-                             fixed_throt=1750,
-                             steer=current_steer,
-                             reason="Minimum_speed_boost",
-                             transcript=transcript[:50])
+            # If throttle is too slow (less than 1650), boost it for better performance
+            elif current_throt > 1500 and current_throt < 1650:
+                original_throt = current_throt
+                processed["throt"] = 1750  # Minimum decent speed
+                log_event("throttle_boost",
+                         original_throt=original_throt,
+                         fixed_throt=1750,
+                         steer=current_steer,
+                         reason="Minimum_speed_boost",
+                         transcript=transcript[:50])
 
         if "speed_pct" in processed:
             try:
