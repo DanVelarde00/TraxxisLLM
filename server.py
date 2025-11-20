@@ -704,11 +704,44 @@ RULES:
              transcript=transcript[:50])
 
     for step in steps:
-        if not isinstance(step, dict) or "action" not in step:
+        if not isinstance(step, dict):
             continue
+
+        # CRITICAL FIX: If LLM forgot "action" field, infer it
+        if "action" not in step:
+            # Infer action type from fields present
+            if "feet" in step or "distance" in step:
+                step["action"] = "move_dist"
+                log_event("action_inferred",
+                         inferred="move_dist",
+                         reason="has_feet_or_distance",
+                         step_fields=list(step.keys()),
+                         transcript=transcript[:50])
+            else:
+                # Default to move_time
+                step["action"] = "move_time"
+                log_event("action_inferred",
+                         inferred="move_time",
+                         reason="default_or_has_duration",
+                         step_fields=list(step.keys()),
+                         transcript=transcript[:50])
 
         action = step["action"]
         processed = dict(step)
+
+        # Convert "duration" to "time_ms" if LLM used wrong field name
+        if "duration" in processed and "time_ms" not in processed:
+            duration_val = processed.pop("duration")
+            # Assume duration is in seconds if < 100, else milliseconds
+            if isinstance(duration_val, (int, float)):
+                if duration_val < 100:
+                    processed["time_ms"] = int(duration_val * 1000)
+                else:
+                    processed["time_ms"] = int(duration_val)
+                log_event("duration_converted",
+                         original=duration_val,
+                         time_ms=processed["time_ms"],
+                         transcript=transcript[:50])
 
         # ADD MISSING REQUIRED FIELDS (defensive programming)
         if action == "move_time" and "time_ms" not in processed:
