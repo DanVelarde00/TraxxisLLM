@@ -635,6 +635,32 @@ RULES:
     if not isinstance(steps, list):
         steps = []
 
+    # CRITICAL: If LLM generated empty steps, create a default step based on transcript
+    if len(steps) == 0:
+        log_event("empty_steps_fallback",
+                 transcript=transcript[:50],
+                 say=say,
+                 reason="LLM_generated_empty_steps_creating_default")
+
+        # Parse transcript to create reasonable default
+        transcript_lower = transcript.lower()
+
+        # Extract distance if mentioned
+        import re
+        distance_match = re.search(r'(\d+)\s*(?:feet|foot|ft)', transcript_lower)
+
+        if distance_match:
+            # Distance command
+            feet = float(distance_match.group(1))
+            steps = [{"action": "move_dist", "throt": 1800, "steer": 1400, "feet": feet}]
+            if not say:
+                say = f"Moving {feet} feet"
+        else:
+            # Default: move forward for 3 seconds
+            steps = [{"action": "move_time", "throt": 1800, "steer": 1400, "time_ms": 3000}]
+            if not say:
+                say = "Moving forward"
+
     # Clean asterisks
     say = re.sub(r'[*_~`]', '', say)
 
