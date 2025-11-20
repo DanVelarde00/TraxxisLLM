@@ -535,9 +535,16 @@ EXAMPLES:
   {"action": "move_time", "throt": 1700, "steer": 1650, "time_ms": 2000}
 ]}
 
+"drive in a circle":
+{"say": "Circling", "steps": [{"action": "move_time", "throt": 1750, "steer": 1650, "time_ms": 60000}]}
+
+"keep turning left":
+{"say": "Turning left continuously", "steps": [{"action": "move_time", "throt": 1700, "steer": 1150, "time_ms": 120000}]}
+
 RULES:
 - ALWAYS include "steps" array (never empty!)
-- Multi-step commands = multiple objects in steps array
+- Continuous commands ("circle", "keep doing X") = ONE step with long time_ms (60000+)
+- Multi-step commands ("then", "and then") = multiple objects in steps array
 - Distance commands (move_dist) use "feet", NOT "time_ms"
 - Time commands (move_time) use "time_ms", NOT "feet"
 - Straight = steer 1400

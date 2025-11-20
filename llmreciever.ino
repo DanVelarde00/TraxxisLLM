@@ -234,7 +234,7 @@ void updateMoveTime() {
 void updateMoveDist() {
   uint32_t elapsed = millis() - currentCmd.start_time;
   int current_ticks = abs(getEncoderTicks());
-  
+
   // Periodic status update
   if (millis() - last_status_print >= STATUS_PRINT_MS) {
     float progress = (float)current_ticks / currentCmd.target_ticks * 100.0;
@@ -243,19 +243,20 @@ void updateMoveDist() {
                   elapsed, currentCmd.throttle, currentCmd.steering);
     last_status_print = millis();
   }
-  
+
   // Check if distance reached
   if (current_ticks >= currentCmd.target_ticks) {
-    Serial.printf("  [MOVE_DIST] Distance reached! (%d ticks in %lums)\n", 
+    Serial.printf("  [MOVE_DIST] Distance reached! (%d ticks in %lums)\n",
                   current_ticks, elapsed);
     finishCommand("ok");
     return;
   }
-  
-  // Check timeout (default 6 seconds)
-  if (elapsed >= 6000) {
-    Serial.printf("  [MOVE_DIST] Timeout! Only reached %d/%d ticks\n", 
-                  current_ticks, currentCmd.target_ticks);
+
+  // Check timeout (use duration_ms from command, default 60 seconds)
+  uint32_t timeout = (currentCmd.duration_ms > 0) ? currentCmd.duration_ms : 60000;
+  if (elapsed >= timeout) {
+    Serial.printf("  [MOVE_DIST] Timeout after %lums! Only reached %d/%d ticks\n",
+                  elapsed, current_ticks, currentCmd.target_ticks);
     finishCommand("timeout");
   }
 }
@@ -451,19 +452,21 @@ void executeCommand(JsonDocument& doc) {
     int throt = doc["payload"]["throt"];
     int steer = doc["payload"]["steer"];
     float feet = doc["payload"]["feet"];
-    
+    int timeout_ms = doc["payload"]["timeout_ms"] | 60000;  // Default 60s if not specified
+
     Serial.println("  [COMMAND TYPE] move_dist");
-    Serial.printf("  [PARAMETERS] throttle=%dµs, steering=%dµs, distance=%.2fft\n", 
-                  throt, steer, feet);
-    
+    Serial.printf("  [PARAMETERS] throttle=%dµs, steering=%dµs, distance=%.2fft, timeout=%dms\n",
+                  throt, steer, feet, timeout_ms);
+
     int target_ticks = (int)(feet * 416.0);
-    Serial.printf("  [CONVERSION] %.2f feet = %d encoder ticks (@ 416 ticks/ft)\n", 
+    Serial.printf("  [CONVERSION] %.2f feet = %d encoder ticks (@ 416 ticks/ft)\n",
                   feet, target_ticks);
-    
+
     currentCmd.throttle = throt;
     currentCmd.steering = steer;
     currentCmd.target_ticks = target_ticks;
-    
+    currentCmd.duration_ms = timeout_ms;  // Store timeout for updateMoveDist()
+
     resetEncoder();
     setMotorControl(throt, steer);
     startCommand(msg_id, CommandState::EXECUTING_MOVE_DIST);
