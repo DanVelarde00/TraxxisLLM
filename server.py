@@ -535,6 +535,12 @@ EXAMPLES:
   {"action": "move_time", "throt": 1700, "steer": 1650, "time_ms": 2000}
 ]}
 
+"move forward 5 feet then turn left":
+{"say": "Forward then left", "steps": [
+  {"action": "move_dist", "throt": 1800, "steer": 1400, "feet": 5},
+  {"action": "move_time", "throt": 1700, "steer": 1150, "time_ms": 2000}
+]}
+
 "drive in a circle":
 {"say": "Circling", "steps": [{"action": "move_time", "throt": 1750, "steer": 1650, "time_ms": 60000}]}
 
@@ -544,12 +550,11 @@ EXAMPLES:
 RULES:
 - ALWAYS include "steps" array (never empty!)
 - Continuous commands ("circle", "keep doing X") = ONE step with long time_ms (60000+)
-- Multi-step commands ("then", "and then") = multiple objects in steps array
+- Multi-step commands with "THEN" = multiple steps, first step STRAIGHT, second step TURNS
+  Example: "go forward then turn left" = [{steer:1400}, {steer:1150}]
 - Distance commands (move_dist) use "feet", NOT "time_ms"
 - Time commands (move_time) use "time_ms", NOT "feet"
-- Straight = steer 1400
-- Left = steer 1150
-- Right = steer 1650
+- Straight = steer 1400, Left = steer 1150, Right = steer 1650
 """
 
     user_prompt = ""
@@ -579,11 +584,11 @@ RULES:
         "stream": False,
         "format": "json",
         "options": {
-            "temperature": 0.1,  # Lower = faster, more deterministic
-            "num_predict": 200,  # Reduced for faster generation
-            "num_ctx": 1024,     # Reduced context window for speed
-            "top_k": 10,         # Limit token sampling for speed
-            "top_p": 0.9         # Nucleus sampling for quality
+            "temperature": 0.05,  # Very low = faster, more deterministic
+            "num_predict": 100,   # Reduced even more - JSON is short
+            "num_ctx": 1024,      # Reduced context window for speed
+            "top_k": 5,           # Lower = faster sampling
+            "top_p": 0.85         # Lower = faster, still good quality
         },
     }
 
@@ -646,6 +651,13 @@ RULES:
     has_left_command = any(keyword in transcript_lower for keyword in left_keywords)
     has_right_command = any(keyword in transcript_lower for keyword in right_keywords)
 
+    # Detect multi-step commands - DON'T apply blanket steering fixes if detected
+    is_multistep = any(keyword in transcript_lower for keyword in ["then", "and then", "after that"])
+
+    # Only apply aggressive steering fixes for SINGLE-step commands
+    # Multi-step commands should trust the LLM to get the sequence right
+    apply_steering_fixes = (len(steps) == 1 and not is_multistep)
+
     for step in steps:
         if not isinstance(step, dict) or "action" not in step:
             continue
@@ -672,8 +684,8 @@ RULES:
                      reason="LLM_forgot_distance",
                      transcript=transcript[:50])
 
-        # FIX STEERING if LLM got it wrong
-        if "steer" in processed:
+        # FIX STEERING if LLM got it wrong (ONLY for single-step commands!)
+        if "steer" in processed and apply_steering_fixes:
             steer = processed["steer"]
             original_steer = steer
 
@@ -693,7 +705,7 @@ RULES:
                     log_event("steering_fix",
                              original=original_steer,
                              fixed=processed["steer"],
-                             reason="left_command_detected",
+                             reason="left_command_detected_single_step",
                              intensity="hard" if is_hard else ("slight" if is_slight else "medium"),
                              transcript=transcript[:50])
 
@@ -709,17 +721,17 @@ RULES:
                     log_event("steering_fix",
                              original=original_steer,
                              fixed=processed["steer"],
-                             reason="right_command_detected",
+                             reason="right_command_detected_single_step",
                              intensity="hard" if is_hard else ("slight" if is_slight else "medium"),
                              transcript=transcript[:50])
 
-            # Log even when steering is correct (for debugging)
-            else:
-                log_event("steering_check",
-                         steer=steer,
-                         left_detected=has_left_command,
-                         right_detected=has_right_command,
-                         transcript=transcript[:50])
+        # Log multi-step detection (for debugging)
+        if is_multistep or len(steps) > 1:
+            log_event("multistep_detected",
+                     step_count=len(steps),
+                     is_multistep_keyword=is_multistep,
+                     steering_fixes_disabled=not apply_steering_fixes,
+                     transcript=transcript[:50])
 
             # RC CAR PHYSICS FIX: If turning (steer != 1400), MUST be moving (throt > 1500)
             if "throt" in processed:
