@@ -653,6 +653,25 @@ RULES:
         action = step["action"]
         processed = dict(step)
 
+        # ADD MISSING REQUIRED FIELDS (defensive programming)
+        if action == "move_time" and "time_ms" not in processed:
+            # LLM forgot time_ms! Add default based on command
+            processed["time_ms"] = 3000  # 3 seconds default
+            log_event("time_ms_added",
+                     action=action,
+                     default_time_ms=3000,
+                     reason="LLM_forgot_time_ms",
+                     transcript=transcript[:50])
+
+        if action in ["move_dist", "move_distance"] and "feet" not in processed:
+            # LLM forgot distance! This is critical - default to 5 feet
+            processed["feet"] = 5.0
+            log_event("feet_added",
+                     action=action,
+                     default_feet=5.0,
+                     reason="LLM_forgot_distance",
+                     transcript=transcript[:50])
+
         # FIX STEERING if LLM got it wrong
         if "steer" in processed:
             steer = processed["steer"]
