@@ -635,6 +635,13 @@ RULES:
     if not isinstance(steps, list):
         steps = []
 
+    # DEBUG: Log what LLM actually returned
+    log_event("llm_raw_response",
+             say=say[:50],
+             steps_count=len(steps),
+             steps_raw=steps[:3] if steps else "EMPTY",
+             transcript=transcript[:50])
+
     # CRITICAL: If LLM generated empty steps, create a default step based on transcript
     if len(steps) == 0:
         log_event("empty_steps_fallback",
@@ -689,6 +696,12 @@ RULES:
     # Only apply aggressive steering fixes for SINGLE-step commands
     # Multi-step commands should trust the LLM to get the sequence right
     apply_steering_fixes = (len(steps) == 1 and not is_multistep)
+
+    # DEBUG: Log steps before post-processing loop
+    log_event("before_postprocess",
+             steps_count=len(steps),
+             steps_preview=steps[:2] if steps else "EMPTY",
+             transcript=transcript[:50])
 
     for step in steps:
         if not isinstance(step, dict) or "action" not in step:
