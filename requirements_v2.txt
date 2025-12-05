@@ -1,0 +1,59 @@
+# Voice Assistant V2 - Dependencies
+#
+# Install with: pip install -r requirements_v2.txt
+#
+# For cloud mode, you'll also need API keys:
+# - OPENAI_API_KEY (for Whisper API and GPT models)
+# - ANTHROPIC_API_KEY (for Claude models)
+# - ELEVENLABS_API_KEY (for custom voice TTS)
+
+# ===== Core Dependencies =====
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+httpx>=0.26.0
+pydantic>=2.5.0
+python-multipart>=0.0.6
+
+# ===== Audio Processing =====
+pyaudio>=0.2.13
+wave
+webrtcvad>=2.0.10
+numpy>=1.24.0
+
+# ===== Keyboard Input =====
+keyboard>=0.13.5
+
+# ===== Local Mode Dependencies =====
+# These are required if running in local mode (Piper + Ollama + Local Whisper)
+
+# Local Whisper (OpenAI's open source model)
+openai-whisper>=20231117
+# Alternative: faster-whisper for better performance
+# faster-whisper>=0.10.0
+
+# Piper TTS (fast neural TTS)
+piper-tts>=1.2.0
+
+# Vosk for wake word detection (optional, for V1 compatibility)
+vosk>=0.3.45
+
+# ===== Cloud Mode Dependencies =====
+# These are required if using cloud APIs
+
+# OpenAI SDK (for Whisper API and GPT models)
+openai>=1.10.0
+
+# Anthropic SDK (for Claude models)
+anthropic>=0.18.0
+
+# ElevenLabs SDK (for custom voice TTS)
+elevenlabs>=0.2.27
+
+# ===== Additional Utilities =====
+requests>=2.31.0
+python-dotenv>=1.0.0  # For loading API keys from .env file
+
+# ===== Development Dependencies (optional) =====
+# pytest>=7.4.0
+# black>=23.12.0
+# ruff>=0.1.9
