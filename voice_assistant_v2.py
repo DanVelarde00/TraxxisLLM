@@ -264,9 +264,27 @@ class VoiceAssistantV2:
 
         try:
             self.recording = True
+            record_start = time.time()
 
             # Record audio
             audio_data = self.record_audio()
+
+            # Calculate recording duration
+            record_duration = time.time() - record_start
+
+            # Minimum recording length check (prevent accidental taps)
+            MIN_RECORDING_DURATION = 0.3  # 300ms minimum
+            if record_duration < MIN_RECORDING_DURATION:
+                print(f"[V2] ⚠ Recording too short ({record_duration:.2f}s) - minimum is {MIN_RECORDING_DURATION}s")
+                print(f"[V2] 💡 Hold 'V' for at least {MIN_RECORDING_DURATION}s to record a command")
+                return
+
+            # Check audio data size (WAV header is 44 bytes, need actual audio data)
+            MIN_AUDIO_SIZE = 1000  # At least 1KB of data (includes header + audio)
+            if len(audio_data) < MIN_AUDIO_SIZE:
+                print(f"[V2] ⚠ Audio data too small ({len(audio_data)} bytes) - need at least {MIN_AUDIO_SIZE} bytes")
+                print(f"[V2] 💡 Try speaking longer or holding 'V' for more time")
+                return
 
             # Send to server
             result = self.send_voice_command(audio_data)
