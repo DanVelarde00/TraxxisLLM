@@ -71,6 +71,15 @@ async def lifespan(app: FastAPI):
         print(f"[V2 startup] ✗ Configuration error: {e}")
         print("[V2 startup] WARNING: Some features may not work correctly")
 
+    # Initialize pygame mixer for audio playback
+    try:
+        import pygame
+        pygame.mixer.init()
+        print("[V2 startup] ✓ pygame mixer initialized for audio playback")
+    except Exception as e:
+        print(f"[V2 startup] ✗ Failed to initialize pygame mixer: {e}")
+        print("[V2 startup] WARNING: Audio playback may not work")
+
     if config.mode == 'local':
         # Load local models (Whisper, Piper)
         try:
@@ -98,6 +107,14 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Cleanup pygame
+        try:
+            import pygame
+            pygame.mixer.quit()
+            print("[V2 shutdown] pygame mixer closed")
+        except:
+            pass
+
         await _httpx_client.aclose()
         _httpx_client = None
         print("[V2 shutdown] HTTP client closed")
@@ -814,13 +831,16 @@ async def play_audio(audio_data: bytes, output_path: Optional[Path] = None):
     print(f"[Audio] Saved to {output_path} ({len(audio_data)} bytes)")
 
     # Play audio using pygame (supports both MP3 and WAV)
+    playback_successful = False
     try:
         import pygame
 
-        # Initialize pygame mixer if not already initialized
+        # Check if pygame mixer is initialized
         if not pygame.mixer.get_init():
+            print("[Audio] WARNING: pygame mixer not initialized, attempting to initialize...")
             pygame.mixer.init()
-            print("[Audio] Initialized pygame mixer")
+
+        print(f"[Audio] Loading audio file: {output_path}")
 
         # Load and play audio
         pygame.mixer.music.load(str(output_path))
@@ -833,23 +853,52 @@ async def play_audio(audio_data: bytes, output_path: Optional[Path] = None):
             await asyncio.sleep(0.1)
 
         print(f"[Audio] Playback complete")
+        playback_successful = True
 
     except Exception as e:
-        print(f"[Audio] Error playing audio with pygame: {e}")
-        print(f"[Audio] Falling back to system player...")
+        print(f"[Audio] ✗ Error playing audio with pygame: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
 
-        # Fallback to system audio players
+        # Try fallback players
+        print(f"[Audio] Attempting fallback playback method...")
+
         try:
-            if sys.platform == "darwin":
+            if sys.platform == "win32":
+                # Windows fallback: use winsound for WAV or start command for MP3
+                if str(output_path).endswith('.wav'):
+                    import winsound
+                    print(f"[Audio] Using winsound for WAV playback")
+                    await asyncio.to_thread(winsound.PlaySound, str(output_path), winsound.SND_FILENAME)
+                else:
+                    # Use Windows 'start' command to open MP3 with default player
+                    print(f"[Audio] Using Windows Media Player for MP3")
+                    await asyncio.to_thread(
+                        subprocess.run,
+                        ["powershell", "-c", f"(New-Object Media.SoundPlayer '{output_path}').PlaySync()"],
+                        check=False,
+                        capture_output=True
+                    )
+                playback_successful = True
+                print(f"[Audio] Fallback playback complete")
+            elif sys.platform == "darwin":
                 await asyncio.to_thread(subprocess.run, ["afplay", str(output_path)], check=True)
+                playback_successful = True
             elif sys.platform == "linux":
                 await asyncio.to_thread(subprocess.run, ["mpg123", str(output_path)], check=True)
+                playback_successful = True
             else:
-                print(f"[Audio] No fallback player available for {sys.platform}")
+                print(f"[Audio] ✗ No fallback player available for {sys.platform}")
         except Exception as fallback_err:
-            print(f"[Audio] Fallback player also failed: {fallback_err}")
+            print(f"[Audio] ✗ Fallback player failed: {type(fallback_err).__name__}: {fallback_err}")
 
-    # Cleanup after delay
+    if not playback_successful:
+        print(f"[Audio] ✗ All playback methods failed. Audio saved but not played.")
+        print(f"[Audio] You can manually play: {output_path}")
+        # Don't delete file if playback failed - keep it for debugging
+        return
+
+    # Cleanup after delay (only if playback was successful)
     await asyncio.sleep(2)
     output_path.unlink(missing_ok=True)
     print(f"[Audio] Cleaned up {output_path}")
