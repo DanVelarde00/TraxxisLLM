@@ -795,39 +795,64 @@ async def generate_tts(text: str) -> bytes:
 
 async def play_audio(audio_data: bytes, output_path: Optional[Path] = None):
     """
-    Play audio file using system audio player
+    Play audio file using pygame (supports MP3)
 
     Args:
-        audio_data: Audio bytes
+        audio_data: Audio bytes (MP3 from ElevenLabs or WAV from Piper)
         output_path: Optional path to save audio file
     """
     # Save audio file
     if output_path is None:
         timestamp = int(time.time() * 1000)
-        output_path = config.tts_dir / f"response_{timestamp}.mp3"
+        # ElevenLabs returns MP3, Piper returns WAV
+        extension = "mp3" if config.mode == 'cloud' else "wav"
+        output_path = config.tts_dir / f"response_{timestamp}.{extension}"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(audio_data)
 
-    print(f"[Audio] Saved to {output_path}")
+    print(f"[Audio] Saved to {output_path} ({len(audio_data)} bytes)")
 
-    # Play audio based on platform
+    # Play audio using pygame (supports both MP3 and WAV)
     try:
-        if sys.platform == "win32":
-            import winsound
-            winsound.PlaySound(str(output_path), winsound.SND_FILENAME)
-        elif sys.platform == "darwin":
-            subprocess.run(["afplay", str(output_path)], check=True)
-        else:
-            subprocess.run(["aplay", str(output_path)], check=True)
+        import pygame
+
+        # Initialize pygame mixer if not already initialized
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+            print("[Audio] Initialized pygame mixer")
+
+        # Load and play audio
+        pygame.mixer.music.load(str(output_path))
+        pygame.mixer.music.play()
+
+        print(f"[Audio] Started playback...")
+
+        # Wait for playback to complete
+        while pygame.mixer.music.get_busy():
+            await asyncio.sleep(0.1)
 
         print(f"[Audio] Playback complete")
+
     except Exception as e:
-        print(f"[Audio] Error playing audio: {e}")
+        print(f"[Audio] Error playing audio with pygame: {e}")
+        print(f"[Audio] Falling back to system player...")
+
+        # Fallback to system audio players
+        try:
+            if sys.platform == "darwin":
+                await asyncio.to_thread(subprocess.run, ["afplay", str(output_path)], check=True)
+            elif sys.platform == "linux":
+                await asyncio.to_thread(subprocess.run, ["mpg123", str(output_path)], check=True)
+            else:
+                print(f"[Audio] No fallback player available for {sys.platform}")
+        except Exception as fallback_err:
+            print(f"[Audio] Fallback player also failed: {fallback_err}")
 
     # Cleanup after delay
-    await asyncio.sleep(5)
+    await asyncio.sleep(2)
     output_path.unlink(missing_ok=True)
+    print(f"[Audio] Cleaned up {output_path}")
 
 
 # ============================================================

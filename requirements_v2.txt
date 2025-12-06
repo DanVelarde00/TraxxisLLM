@@ -19,6 +19,7 @@ pyaudio>=0.2.13
 wave
 webrtcvad>=2.0.10
 numpy>=1.24.0
+pygame>=2.5.0  # For MP3 audio playback (ElevenLabs TTS)
 
 # ===== Keyboard Input =====
 keyboard>=0.13.5
