@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import Literal
 from dataclasses import dataclass, field
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 @dataclass
 class VoiceAssistantConfig:
     """Configuration for Voice Assistant V2"""
@@ -92,7 +96,7 @@ class VoiceAssistantConfig:
         return self.piper_model_dir / "BT7274.onnx.json"
 
     # Cloud ElevenLabs settings (when mode='cloud')
-    elevenlabs_voice_id: str = ""  # Set your custom voice ID here
+    elevenlabs_voice_id: str = field(default_factory=lambda: os.getenv("ELEVENLABS_VOICE_ID", ""))  # Set your custom voice ID here
     elevenlabs_model: str = "eleven_turbo_v2_5"  # eleven_turbo_v2_5, eleven_multilingual_v2
     elevenlabs_stability: float = 0.5
     elevenlabs_similarity_boost: float = 0.75

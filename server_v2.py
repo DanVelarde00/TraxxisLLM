@@ -195,7 +195,13 @@ async def transcribe_whisper_api(audio_data: bytes, language: str = "en") -> tup
             headers=headers,
             timeout=30.0
         )
-        resp.raise_for_status()
+
+        # Check for errors and show the actual error message
+        if resp.status_code != 200:
+            error_detail = resp.text
+            print(f"[Whisper API] ✗ API Error {resp.status_code}: {error_detail}")
+            raise ValueError(f"Whisper API error: {error_detail}")
+
         result = resp.json()
 
         transcript = result.get('text', '').strip()
@@ -206,6 +212,9 @@ async def transcribe_whisper_api(audio_data: bytes, language: str = "en") -> tup
 
         return transcript, detected_lang
 
+    except ValueError as e:
+        # Re-raise ValueError with API error details
+        raise
     except Exception as e:
         print(f"[Whisper API] ✗ Error: {e}")
         raise
