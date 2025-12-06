@@ -136,7 +136,13 @@ class VoiceAssistantConfig:
             if not self.elevenlabs_api_key:
                 raise ValueError("ElevenLabs API key is required for cloud mode")
             if not self.elevenlabs_voice_id:
-                raise ValueError("ElevenLabs voice ID is required for cloud mode")
+                # DEBUG: Show what we're actually seeing
+                print(f"[DEBUG] elevenlabs_voice_id value: '{self.elevenlabs_voice_id}'")
+                print(f"[DEBUG] ELEVENLABS_VOICE_ID env var: '{os.getenv('ELEVENLABS_VOICE_ID')}'")
+                # Try to reload from environment
+                self.elevenlabs_voice_id = os.getenv('ELEVENLABS_VOICE_ID', '')
+                if not self.elevenlabs_voice_id:
+                    raise ValueError("ElevenLabs voice ID is required for cloud mode")
 
         elif self.mode == 'local':
             if not self.piper_model_path.exists():
