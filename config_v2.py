@@ -77,7 +77,7 @@ class VoiceAssistantConfig:
     openai_max_tokens: int = 150
 
     # Anthropic settings
-    anthropic_model: str = "claude-3-5-sonnet-20241022"  # claude-3-5-sonnet, claude-3-opus, claude-3-sonnet
+    anthropic_model: str = "claude-3-5-sonnet-20240620"  # Latest stable Claude 3.5 Sonnet
     anthropic_temperature: float = 0.15
     anthropic_max_tokens: int = 150
 
