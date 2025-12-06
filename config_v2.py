@@ -69,7 +69,7 @@ class VoiceAssistantConfig:
     ollama_num_ctx: int = 1024
 
     # Cloud LLM settings (when mode='cloud')
-    llm_provider: Literal['openai', 'anthropic'] = 'anthropic'  # Choose cloud LLM provider
+    llm_provider: Literal['openai', 'anthropic'] = 'openai'  # Choose cloud LLM provider
 
     # OpenAI settings
     openai_model: str = "gpt-4o"  # gpt-4o, gpt-4-turbo, gpt-3.5-turbo
