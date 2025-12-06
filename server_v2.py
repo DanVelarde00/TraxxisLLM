@@ -467,7 +467,13 @@ async def llm_plan_anthropic(transcript: str, context: Optional[Dict[str, Any]] 
             headers=headers,
             timeout=30.0
         )
-        resp.raise_for_status()
+
+        # Check for errors and show the actual error message
+        if resp.status_code != 200:
+            error_detail = resp.text
+            print(f"[Anthropic LLM] ✗ API Error {resp.status_code}: {error_detail}")
+            raise ValueError(f"Anthropic API error: {error_detail}")
+
         result = resp.json()
 
         raw = result['content'][0]['text'].strip()
@@ -477,6 +483,9 @@ async def llm_plan_anthropic(transcript: str, context: Optional[Dict[str, Any]] 
         # Parse JSON response
         return await parse_llm_response(raw, transcript)
 
+    except ValueError as e:
+        # Re-raise ValueError with API error details
+        raise
     except Exception as e:
         print(f"[Anthropic LLM] ✗ Error: {e}")
         raise
