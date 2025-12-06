@@ -56,6 +56,7 @@ class VoiceAssistantV2:
         self.recording = False
         self.muted = False
         self.conversation_history = []
+        self.last_short_recording = 0  # Timestamp of last failed short recording
 
         # Visual feedback
         self.recording_thread = None
@@ -172,11 +173,11 @@ class VoiceAssistantV2:
 
     def _recording_animation(self):
         """Show recording animation"""
-        animation = ["⬤", "⬤", "⬤"]
+        animation = [".", ".", "."]
         idx = 0
         while not self.stop_recording_animation:
-            print(f"\rRecording {''.join(animation)} ", end='', flush=True)
-            animation[idx % 3] = "○" if animation[idx % 3] == "⬤" else "⬤"
+            print(f"\rRecording{''.join(animation)} ", end='', flush=True)
+            animation[idx % 3] = " " if animation[idx % 3] == "." else "."
             idx += 1
             time.sleep(0.3)
 
@@ -244,13 +245,20 @@ class VoiceAssistantV2:
 
     def handle_push_to_talk(self):
         """Handle push-to-talk recording and command sending"""
+        # Cooldown check to prevent spam from accidental key presses
+        COOLDOWN_PERIOD = 2.0  # 2 seconds cooldown after failed recording
+        time_since_last_short = time.time() - self.last_short_recording
+
+        if 0 < time_since_last_short < COOLDOWN_PERIOD:
+            # Silent cooldown - don't even show a message
+            return
+
         if self.muted:
             print("[V2] Muted - unmute with 'M' key")
             return
 
         if self.recording:
-            print("[V2] WARNING: Already recording")
-            return
+            return  # Already recording, silently ignore
 
         try:
             self.recording = True
@@ -265,15 +273,15 @@ class VoiceAssistantV2:
             # Minimum recording length check (prevent accidental taps)
             MIN_RECORDING_DURATION = 0.3  # 300ms minimum
             if record_duration < MIN_RECORDING_DURATION:
-                print(f"[V2] WARNING: Recording too short ({record_duration:.2f}s) - minimum is {MIN_RECORDING_DURATION}s")
-                print(f"[V2] TIP: Hold 'V' for at least {MIN_RECORDING_DURATION}s to record a command")
+                self.last_short_recording = time.time()
+                print(f"[V2] Recording too short ({record_duration:.2f}s) - Hold 'V' longer to speak")
                 return
 
             # Check audio data size (WAV header is 44 bytes, need actual audio data)
             MIN_AUDIO_SIZE = 1000  # At least 1KB of data (includes header + audio)
             if len(audio_data) < MIN_AUDIO_SIZE:
-                print(f"[V2] WARNING: Audio data too small ({len(audio_data)} bytes) - need at least {MIN_AUDIO_SIZE} bytes")
-                print(f"[V2] TIP: Try speaking longer or holding 'V' for more time")
+                self.last_short_recording = time.time()
+                print(f"[V2] Audio too small ({len(audio_data)} bytes) - Hold 'V' and speak clearly")
                 return
 
             # Send to server
