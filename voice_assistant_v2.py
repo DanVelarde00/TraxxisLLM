@@ -61,7 +61,7 @@ class VoiceAssistantV2:
         self.recording_thread = None
         self.stop_recording_animation = False
 
-        print("[V2 INIT] ✓ Voice Assistant V2 ready")
+        print("[V2 INIT] Voice Assistant V2 ready")
         print(f"[V2 INIT] Server: {SERVER_URL}")
         print(f"[V2 INIT] Audio directory: {AUDIO_DIR}")
 
@@ -111,7 +111,7 @@ class VoiceAssistantV2:
         Returns:
             WAV audio bytes
         """
-        print("[V2] 🎤 Recording... (release 'V' to stop)")
+        print("[V2] Recording... (release 'V' to stop)")
 
         stream = self.pa.open(
             format=pyaudio.paInt16,
@@ -147,7 +147,7 @@ class VoiceAssistantV2:
 
                     # Stop if too long (30 seconds max)
                     if time.time() - start_time > 30:
-                        print("\n[V2] ⚠ Maximum recording duration reached (30s)")
+                        print("\n[V2] WARNING: Maximum recording duration reached (30s)")
                         break
 
         finally:
@@ -158,7 +158,7 @@ class VoiceAssistantV2:
                 self.recording_thread.join(timeout=0.5)
 
         duration = time.time() - start_time
-        print(f"\n[V2] ✓ Recorded {duration:.1f}s")
+        print(f"\n[V2] Recorded {duration:.1f}s")
 
         # Convert frames to WAV bytes
         wav_buffer = io.BytesIO()
@@ -175,7 +175,7 @@ class VoiceAssistantV2:
         animation = ["⬤", "⬤", "⬤"]
         idx = 0
         while not self.stop_recording_animation:
-            print(f"\r🎤 Recording {''.join(animation)} ", end='', flush=True)
+            print(f"\rRecording {''.join(animation)} ", end='', flush=True)
             animation[idx % 3] = "○" if animation[idx % 3] == "⬤" else "⬤"
             idx += 1
             time.sleep(0.3)
@@ -190,7 +190,7 @@ class VoiceAssistantV2:
         Returns:
             Response dict with transcript, plan, timings
         """
-        print("[V2] 📤 Sending to server...")
+        print("[V2] Sending to server...")
 
         try:
             # Prepare multipart form data
@@ -213,7 +213,7 @@ class VoiceAssistantV2:
             )
 
             if resp.status_code != 200:
-                print(f"[V2] ✗ Server error: {resp.status_code}")
+                print(f"[V2] ERROR: Server error: {resp.status_code}")
                 return None
 
             result = resp.json()
@@ -223,19 +223,9 @@ class VoiceAssistantV2:
             plan = result.get('plan', {})
             timings = result.get('timings', {})
 
-            print("\n" + "="*60)
-            print(f"[V2] 📝 Transcript: \"{transcript}\"")
-
-            if plan:
-                print(f"[V2] 💬 BT says: \"{plan.get('say', '')}\"")
-                print(f"[V2] 🚗 Steps: {len(plan.get('steps', []))} command(s)")
-
-            print(f"[V2] ⏱  Timings:")
-            print(f"     Transcription: {timings.get('transcribe', 0):.2f}s")
-            print(f"     LLM:          {timings.get('llm', 0):.2f}s")
-            print(f"     TTS:          {timings.get('tts', 0):.2f}s")
-            print(f"     TOTAL:        {timings.get('total', 0):.2f}s")
-            print("="*60 + "\n")
+            print(f"\n[V2] \"{transcript}\" -> \"{plan.get('say', '')}\" ({timings.get('total', 0):.2f}s total)")
+            if plan and plan.get('steps'):
+                print(f"[V2] Sending {len(plan.get('steps', []))} command(s) to RC car\n")
 
             # Update conversation history
             if transcript:
@@ -246,20 +236,20 @@ class VoiceAssistantV2:
             return result
 
         except requests.exceptions.Timeout:
-            print("[V2] ✗ Request timeout")
+            print("[V2] ERROR: Request timeout")
             return None
         except Exception as e:
-            print(f"[V2] ✗ Error: {e}")
+            print(f"[V2] ERROR: Error: {e}")
             return None
 
     def handle_push_to_talk(self):
         """Handle push-to-talk recording and command sending"""
         if self.muted:
-            print("[V2] 🔇 Muted - unmute with 'M' key")
+            print("[V2] Muted - unmute with 'M' key")
             return
 
         if self.recording:
-            print("[V2] ⚠ Already recording")
+            print("[V2] WARNING: Already recording")
             return
 
         try:
@@ -275,15 +265,15 @@ class VoiceAssistantV2:
             # Minimum recording length check (prevent accidental taps)
             MIN_RECORDING_DURATION = 0.3  # 300ms minimum
             if record_duration < MIN_RECORDING_DURATION:
-                print(f"[V2] ⚠ Recording too short ({record_duration:.2f}s) - minimum is {MIN_RECORDING_DURATION}s")
-                print(f"[V2] 💡 Hold 'V' for at least {MIN_RECORDING_DURATION}s to record a command")
+                print(f"[V2] WARNING: Recording too short ({record_duration:.2f}s) - minimum is {MIN_RECORDING_DURATION}s")
+                print(f"[V2] TIP: Hold 'V' for at least {MIN_RECORDING_DURATION}s to record a command")
                 return
 
             # Check audio data size (WAV header is 44 bytes, need actual audio data)
             MIN_AUDIO_SIZE = 1000  # At least 1KB of data (includes header + audio)
             if len(audio_data) < MIN_AUDIO_SIZE:
-                print(f"[V2] ⚠ Audio data too small ({len(audio_data)} bytes) - need at least {MIN_AUDIO_SIZE} bytes")
-                print(f"[V2] 💡 Try speaking longer or holding 'V' for more time")
+                print(f"[V2] WARNING: Audio data too small ({len(audio_data)} bytes) - need at least {MIN_AUDIO_SIZE} bytes")
+                print(f"[V2] TIP: Try speaking longer or holding 'V' for more time")
                 return
 
             # Send to server
@@ -293,7 +283,7 @@ class VoiceAssistantV2:
                 # Audio will be played by server
                 pass
             else:
-                print("[V2] ✗ No response from server")
+                print("[V2] ERROR: No response from server")
 
         finally:
             self.recording = False
@@ -321,7 +311,7 @@ class VoiceAssistantV2:
                 print(f"  WS Clients:   {status.get('ws_clients', 0)}")
                 print(f"  Commands:     {status.get('inflight_commands', 0)} inflight")
         except:
-            print("\n✗ Could not fetch server status")
+            print("\nERROR: Could not fetch server status")
 
         print("="*60 + "\n")
 
@@ -364,11 +354,11 @@ class VoiceAssistantV2:
 
         # Check server connection
         if not self.is_server_running():
-            print("⚠ WARNING: V2 server is not running!")
+            print("WARNING: WARNING: V2 server is not running!")
             print(f"Start server with: python server_v2.py")
             print("Or run: uvicorn server_v2:app --host 0.0.0.0 --port 8001\n")
 
-        print("✓ Ready! Hold 'V' to record a voice command.\n")
+        print("Ready! Hold 'V' to record a voice command.\n")
 
         # Register keyboard handlers
         keyboard.on_press_key('v', lambda _: self.handle_push_to_talk())
@@ -391,12 +381,12 @@ class VoiceAssistantV2:
             print("[V2] Cleanup...")
             keyboard.unhook_all()
             self.pa.terminate()
-            print("[V2] ✓ Goodbye!")
+            print("[V2] Goodbye!")
 
     def _toggle_mute(self):
         """Toggle mute state"""
         self.muted = not self.muted
-        status = "🔇 Muted" if self.muted else "🔊 Unmuted"
+        status = "Muted" if self.muted else "Unmuted"
         print(f"\n[V2] {status}")
 
 
