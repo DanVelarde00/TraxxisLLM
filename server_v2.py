@@ -66,18 +66,18 @@ async def lifespan(app: FastAPI):
     # Validate configuration
     try:
         config.validate()
-        print("[V2 startup] ✓ Configuration validated")
+        print("[V2 startup] Configuration validated")
     except ValueError as e:
-        print(f"[V2 startup] ✗ Configuration error: {e}")
+        print(f"[V2 startup] ERROR: Configuration error: {e}")
         print("[V2 startup] WARNING: Some features may not work correctly")
 
     # Initialize pygame mixer for audio playback
     try:
         import pygame
         pygame.mixer.init()
-        print("[V2 startup] ✓ pygame mixer initialized for audio playback")
+        print("[V2 startup] pygame mixer initialized for audio playback")
     except Exception as e:
-        print(f"[V2 startup] ✗ Failed to initialize pygame mixer: {e}")
+        print(f"[V2 startup] ERROR: Failed to initialize pygame mixer: {e}")
         print("[V2 startup] WARNING: Audio playback may not work")
 
     if config.mode == 'local':
@@ -86,9 +86,9 @@ async def lifespan(app: FastAPI):
             import whisper
             print(f"[V2 startup] Loading local Whisper model '{config.local_whisper_model}'...")
             _whisper_model = await asyncio.to_thread(whisper.load_model, config.local_whisper_model)
-            print("[V2 startup] ✓ Whisper model loaded")
+            print("[V2 startup] Whisper model loaded")
         except Exception as e:
-            print(f"[V2 startup] ✗ Failed to load Whisper: {e}")
+            print(f"[V2 startup] ERROR: Failed to load Whisper: {e}")
 
         try:
             from piper.voice import PiperVoice
@@ -98,9 +98,9 @@ async def lifespan(app: FastAPI):
                 str(config.piper_model_path),
                 str(config.piper_config_path)
             )
-            print("[V2 startup] ✓ Piper TTS model loaded")
+            print("[V2 startup] Piper TTS model loaded")
         except Exception as e:
-            print(f"[V2 startup] ✗ Failed to load Piper: {e}")
+            print(f"[V2 startup] ERROR: Failed to load Piper: {e}")
     else:
         print("[V2 startup] Cloud mode - skipping local model loading")
 
@@ -216,7 +216,7 @@ async def transcribe_whisper_api(audio_data: bytes, language: str = "en") -> tup
         # Check for errors and show the actual error message
         if resp.status_code != 200:
             error_detail = resp.text
-            print(f"[Whisper API] ✗ API Error {resp.status_code}: {error_detail}")
+            print(f"[Whisper API] ERROR: API Error {resp.status_code}: {error_detail}")
             raise ValueError(f"Whisper API error: {error_detail}")
 
         result = resp.json()
@@ -225,7 +225,7 @@ async def transcribe_whisper_api(audio_data: bytes, language: str = "en") -> tup
         detected_lang = result.get('language', language)
 
         duration = time.time() - start
-        print(f"[Whisper API] ✓ Transcribed in {duration:.2f}s: '{transcript}'")
+        print(f"[Whisper API] Transcribed in {duration:.2f}s: '{transcript}'")
 
         return transcript, detected_lang
 
@@ -233,7 +233,7 @@ async def transcribe_whisper_api(audio_data: bytes, language: str = "en") -> tup
         # Re-raise ValueError with API error details
         raise
     except Exception as e:
-        print(f"[Whisper API] ✗ Error: {e}")
+        print(f"[Whisper API] ERROR: Error: {e}")
         raise
 
 
@@ -272,7 +272,7 @@ async def transcribe_local_whisper(audio_data: bytes, language: str = "en") -> t
         detected_lang = result.get("language", language)
 
         duration = time.time() - start
-        print(f"[Whisper Local] ✓ Transcribed in {duration:.2f}s: '{transcript}'")
+        print(f"[Whisper Local] Transcribed in {duration:.2f}s: '{transcript}'")
 
         return transcript, detected_lang
 
@@ -428,13 +428,13 @@ async def llm_plan_openai(transcript: str, context: Optional[Dict[str, Any]] = N
 
         raw = result['choices'][0]['message']['content'].strip()
         duration = time.time() - start
-        print(f"[OpenAI LLM] ✓ Generated plan in {duration:.2f}s")
+        print(f"[OpenAI LLM] Generated plan in {duration:.2f}s")
 
         # Parse JSON response
         return await parse_llm_response(raw, transcript)
 
     except Exception as e:
-        print(f"[OpenAI LLM] ✗ Error: {e}")
+        print(f"[OpenAI LLM] ERROR: Error: {e}")
         raise
 
 
@@ -488,14 +488,14 @@ async def llm_plan_anthropic(transcript: str, context: Optional[Dict[str, Any]] 
         # Check for errors and show the actual error message
         if resp.status_code != 200:
             error_detail = resp.text
-            print(f"[Anthropic LLM] ✗ API Error {resp.status_code}: {error_detail}")
+            print(f"[Anthropic LLM] ERROR: API Error {resp.status_code}: {error_detail}")
             raise ValueError(f"Anthropic API error: {error_detail}")
 
         result = resp.json()
 
         raw = result['content'][0]['text'].strip()
         duration = time.time() - start
-        print(f"[Anthropic LLM] ✓ Generated plan in {duration:.2f}s")
+        print(f"[Anthropic LLM] Generated plan in {duration:.2f}s")
 
         # Parse JSON response
         return await parse_llm_response(raw, transcript)
@@ -504,7 +504,7 @@ async def llm_plan_anthropic(transcript: str, context: Optional[Dict[str, Any]] 
         # Re-raise ValueError with API error details
         raise
     except Exception as e:
-        print(f"[Anthropic LLM] ✗ Error: {e}")
+        print(f"[Anthropic LLM] ERROR: Error: {e}")
         raise
 
 
@@ -553,13 +553,13 @@ async def llm_plan_ollama(transcript: str, context: Optional[Dict[str, Any]] = N
 
         raw = result["message"]["content"].strip()
         duration = time.time() - start
-        print(f"[Ollama LLM] ✓ Generated plan in {duration:.2f}s")
+        print(f"[Ollama LLM] Generated plan in {duration:.2f}s")
 
         # Parse JSON response
         return await parse_llm_response(raw, transcript)
 
     except Exception as e:
-        print(f"[Ollama LLM] ✗ Error: {e}")
+        print(f"[Ollama LLM] ERROR: Error: {e}")
         raise
 
 
@@ -751,12 +751,12 @@ async def tts_elevenlabs(text: str) -> bytes:
 
         audio_data = resp.content
         duration = time.time() - start
-        print(f"[ElevenLabs TTS] ✓ Generated {len(audio_data)} bytes in {duration:.2f}s")
+        print(f"[ElevenLabs TTS] Generated {len(audio_data)} bytes in {duration:.2f}s")
 
         return audio_data
 
     except Exception as e:
-        print(f"[ElevenLabs TTS] ✗ Error: {e}")
+        print(f"[ElevenLabs TTS] ERROR: Error: {e}")
         raise
 
 
@@ -789,7 +789,7 @@ async def tts_piper(text: str) -> bytes:
 
     audio_data = wav_file.getvalue()
     duration = time.time() - start
-    print(f"[Piper TTS] ✓ Generated {len(audio_data)} bytes in {duration:.2f}s")
+    print(f"[Piper TTS] Generated {len(audio_data)} bytes in {duration:.2f}s")
 
     return audio_data
 
@@ -853,10 +853,14 @@ async def play_audio(audio_data: bytes, output_path: Optional[Path] = None):
             await asyncio.sleep(0.1)
 
         print(f"[Audio] Playback complete")
+
+        # Unload the music to release the file
+        pygame.mixer.music.unload()
+
         playback_successful = True
 
     except Exception as e:
-        print(f"[Audio] ✗ Error playing audio with pygame: {type(e).__name__}: {e}")
+        print(f"[Audio] ERROR: Error playing audio with pygame: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
 
@@ -888,12 +892,12 @@ async def play_audio(audio_data: bytes, output_path: Optional[Path] = None):
                 await asyncio.to_thread(subprocess.run, ["mpg123", str(output_path)], check=True)
                 playback_successful = True
             else:
-                print(f"[Audio] ✗ No fallback player available for {sys.platform}")
+                print(f"[Audio] ERROR: No fallback player available for {sys.platform}")
         except Exception as fallback_err:
-            print(f"[Audio] ✗ Fallback player failed: {type(fallback_err).__name__}: {fallback_err}")
+            print(f"[Audio] ERROR: Fallback player failed: {type(fallback_err).__name__}: {fallback_err}")
 
     if not playback_successful:
-        print(f"[Audio] ✗ All playback methods failed. Audio saved but not played.")
+        print(f"[Audio] ERROR: All playback methods failed. Audio saved but not played.")
         print(f"[Audio] You can manually play: {output_path}")
         # Don't delete file if playback failed - keep it for debugging
         return
@@ -929,10 +933,6 @@ async def process_voice_command_parallel(
     Returns:
         Result dict with transcript, plan, audio, and timing info
     """
-    print("\n" + "="*60)
-    print("[V2 Pipeline] Starting parallel voice command processing")
-    print("="*60)
-
     pipeline_start = time.time()
 
     # Step 1: Transcribe (must complete first)
@@ -941,7 +941,7 @@ async def process_voice_command_parallel(
     transcribe_duration = time.time() - transcribe_start
 
     if not transcript:
-        print("[V2 Pipeline] ✗ Empty transcript, aborting")
+        print("[V2 Pipeline] ERROR: Empty transcript, aborting")
         return {
             "transcript": "",
             "language": detected_lang,
@@ -968,13 +968,8 @@ async def process_voice_command_parallel(
 
     total_duration = time.time() - pipeline_start
 
-    print("\n" + "="*60)
-    print("[V2 Pipeline] Processing complete")
-    print(f"  Transcription: {transcribe_duration:.2f}s")
-    print(f"  LLM Planning:  {llm_duration:.2f}s")
-    print(f"  TTS Generation: {tts_duration:.2f}s")
-    print(f"  TOTAL:         {total_duration:.2f}s")
-    print("="*60 + "\n")
+    # Single-line summary
+    print(f"[V2 Pipeline] Completed in {total_duration:.2f}s (Whisper: {transcribe_duration:.2f}s, LLM: {llm_duration:.2f}s, TTS: {tts_duration:.2f}s)")
 
     return {
         "transcript": transcript,
@@ -1170,10 +1165,6 @@ async def voice_command(
     - plan: LLM-generated plan (say + steps)
     - timings: Processing time breakdown
     """
-    print("\n" + "="*80)
-    print("[V2 API] /voice_command request received")
-    print("="*80)
-
     # Read audio data
     audio_data = await file.read()
 
@@ -1194,7 +1185,22 @@ async def voice_command(
 
     # Send commands to ESP32
     if result["plan"] and result["plan"].steps:
-        for step in result["plan"].steps:
+        print(f"\n[Commands] Sending {len(result['plan'].steps)} command(s) to RC car:")
+        for i, step in enumerate(result["plan"].steps, 1):
+            # Log the actual command details
+            action = step.get("action", "unknown")
+            throt = step.get("throt", 1500)
+            steer = step.get("steer", 1400)
+
+            if action == "move_time":
+                time_ms = step.get("time_ms", 0)
+                print(f"[Commands]   #{i}: {action} - throttle={throt}, steer={steer}, time={time_ms}ms")
+            elif action == "move_dist":
+                feet = step.get("feet", 0)
+                print(f"[Commands]   #{i}: {action} - throttle={throt}, steer={steer}, distance={feet}ft")
+            else:
+                print(f"[Commands]   #{i}: {action} - {step}")
+
             await enqueue_command("command", step)
 
     return {
