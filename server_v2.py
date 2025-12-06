@@ -29,6 +29,10 @@ import io
 import re
 import os
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 import httpx
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from pydantic import BaseModel, Field, ValidationError
