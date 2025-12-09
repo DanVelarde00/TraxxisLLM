@@ -171,7 +171,7 @@ class WsCommand:
 
 class IncomingMessage(BaseModel):
     type: MsgType
-    cmd_id: Optional[str] = None
+    msg_id: Optional[int] = None  # ESP32 sends msg_id as int, not cmd_id as str
     data: Optional[Dict[str, Any]] = None
 
 
@@ -1038,11 +1038,13 @@ async def _runner():
                 cmd.status = CommandStatus.timeout
                 continue
 
-            # Send command to all connected clients
+            # Send command to all connected clients (ESP32 expects msg_id as int and payload)
+            # Extract numeric ID from cmd_id (e.g., "cmd_1" -> 1)
+            msg_id_int = int(cmd.cmd_id.split('_')[1])
             msg = {
                 "type": cmd.msg_type,
-                "cmd_id": cmd.cmd_id,
-                "data": cmd.payload
+                "msg_id": msg_id_int,
+                "payload": cmd.payload
             }
 
             for ws in list(_ws_clients):
@@ -1134,19 +1136,22 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             # Handle message types
-            if msg.type == MsgType.ack and msg.cmd_id:
-                if msg.cmd_id in _inflight_commands:
-                    cmd = _inflight_commands[msg.cmd_id]
+            if msg.type == MsgType.ack and msg.msg_id is not None:
+                # ESP32 sends msg_id as int (1, 2, 3), we use cmd_id as string ("cmd_1", "cmd_2", etc)
+                cmd_id = f"cmd_{msg.msg_id}"
+                if cmd_id in _inflight_commands:
+                    cmd = _inflight_commands[cmd_id]
                     cmd.status = CommandStatus.acked
                     cmd.acked_at = time.time()
-                    print(f"[WS] ACK received for {msg.cmd_id}")
+                    print(f"[WS] ACK received for {cmd_id}")
 
-            elif msg.type == MsgType.complete and msg.cmd_id:
-                if msg.cmd_id in _inflight_commands:
-                    cmd = _inflight_commands[msg.cmd_id]
+            elif msg.type == MsgType.complete and msg.msg_id is not None:
+                cmd_id = f"cmd_{msg.msg_id}"
+                if cmd_id in _inflight_commands:
+                    cmd = _inflight_commands[cmd_id]
                     cmd.status = CommandStatus.complete
                     cmd.completed_at = time.time()
-                    print(f"[WS] COMPLETE received for {msg.cmd_id}")
+                    print(f"[WS] COMPLETE received for {cmd_id}")
 
             elif msg.type == MsgType.telemetry:
                 print(f"[WS] Telemetry: {msg.data}")
