@@ -80,6 +80,10 @@ async def lifespan(app: FastAPI):
         print(f"[V2 startup] ERROR: Failed to initialize pygame mixer: {e}")
         print("[V2 startup] WARNING: Audio playback may not work")
 
+    # Start command dispatcher for ESP32
+    dispatcher_task = asyncio.create_task(_runner())
+    print("[V2 startup] Command dispatcher started")
+
     if config.mode == 'local':
         # Load local models (Whisper, Piper)
         try:
@@ -1071,12 +1075,6 @@ async def _runner():
         if cmd.status != CommandStatus.complete:
             print(f"[Dispatcher] Command {cmd.cmd_id} completion timeout")
             cmd.status = CommandStatus.timeout
-
-
-# Start dispatcher on startup
-@app.on_event("startup")
-async def start_dispatcher():
-    asyncio.create_task(_runner())
 
 
 # ============================================================

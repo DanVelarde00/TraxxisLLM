@@ -57,6 +57,7 @@ class VoiceAssistantV2:
         self.muted = False
         self.conversation_history = []
         self.last_short_recording = 0  # Timestamp of last failed short recording
+        self.last_handler_call = 0  # Timestamp of last handler invocation (for debouncing)
 
         # Visual feedback
         self.recording_thread = None
@@ -245,6 +246,16 @@ class VoiceAssistantV2:
 
     def handle_push_to_talk(self):
         """Handle push-to-talk recording and command sending"""
+        # Debounce check to prevent keyboard repeat spam
+        DEBOUNCE_PERIOD = 0.5  # 500ms minimum between handler calls
+        time_since_last_call = time.time() - self.last_handler_call
+
+        if time_since_last_call < DEBOUNCE_PERIOD:
+            # Silent debounce - ignore rapid keyboard repeat events
+            return
+
+        self.last_handler_call = time.time()
+
         # Cooldown check to prevent spam from accidental key presses
         COOLDOWN_PERIOD = 2.0  # 2 seconds cooldown after failed recording
         time_since_last_short = time.time() - self.last_short_recording
