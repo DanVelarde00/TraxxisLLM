@@ -56,7 +56,7 @@ _piper_voice = None  # For local mode
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _httpx_client, _whisper_model, _piper_voice
+    global _httpx_client, _whisper_model, _piper_voice, _dispatcher_task
 
     _httpx_client = httpx.AsyncClient(timeout=60.0)  # Longer timeout for API calls
     print("[V2 startup] HTTP client ready")
@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
         print("[V2 startup] WARNING: Audio playback may not work")
 
     # Start command dispatcher for ESP32
-    dispatcher_task = asyncio.create_task(_runner())
+    _dispatcher_task = asyncio.create_task(_runner())
     print("[V2 startup] Command dispatcher started")
 
     if config.mode == 'local':
@@ -111,6 +111,15 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Cancel dispatcher task
+        if _dispatcher_task and not _dispatcher_task.done():
+            _dispatcher_task.cancel()
+            try:
+                await _dispatcher_task
+            except asyncio.CancelledError:
+                pass
+            print("[V2 shutdown] Command dispatcher stopped")
+
         # Cleanup pygame
         try:
             import pygame
@@ -1000,6 +1009,7 @@ _ws_clients: Set[WebSocket] = set()
 _command_queue: asyncio.Queue[WsCommand] = asyncio.Queue()
 _inflight_commands: Dict[str, WsCommand] = {}
 _next_cmd_id = itertools.count(1)
+_dispatcher_task: Optional[asyncio.Task] = None  # Keep reference to prevent GC
 
 async def enqueue_command(msg_type: str, payload: Dict[str, Any], timeout_s: float = 8.0) -> str:
     """Enqueue a command to send to ESP32"""
@@ -1018,63 +1028,73 @@ async def enqueue_command(msg_type: str, payload: Dict[str, Any], timeout_s: flo
 
 async def _runner():
     """Background task to send commands and handle timeouts"""
+    print("[Dispatcher] Runner started")
     while True:
-        cmd = await _command_queue.get()
+        try:
+            cmd = await _command_queue.get()
 
-        if not _ws_clients:
-            print(f"[Dispatcher] No WS clients, skipping command {cmd.cmd_id}")
-            cmd.status = CommandStatus.timeout
-            continue
-
-        # Send command to all connected clients
-        msg = {
-            "type": cmd.msg_type,
-            "cmd_id": cmd.cmd_id,
-            "data": cmd.payload
-        }
-
-        for ws in list(_ws_clients):
-            try:
-                await ws.send_json(msg)
-                cmd.status = CommandStatus.sent
-                cmd.sent_at = time.time()
-                print(f"[Dispatcher] Sent {cmd.msg_type} command {cmd.cmd_id}")
-            except Exception as e:
-                print(f"[Dispatcher] Error sending to client: {e}")
-
-        # Wait for ACK with timeout
-        ack_timeout = 0.5
-        ack_start = time.time()
-        while time.time() - ack_start < ack_timeout:
-            if cmd.status == CommandStatus.acked:
-                break
-            await asyncio.sleep(0.01)
-
-        if cmd.status != CommandStatus.acked:
-            print(f"[Dispatcher] Command {cmd.cmd_id} ACK timeout")
-            # Retry once
-            for ws in list(_ws_clients):
-                try:
-                    await ws.send_json(msg)
-                    print(f"[Dispatcher] Retried command {cmd.cmd_id}")
-                except:
-                    pass
-
-            await asyncio.sleep(ack_timeout)
-            if cmd.status != CommandStatus.acked:
+            if not _ws_clients:
+                print(f"[Dispatcher] No WS clients, skipping command {cmd.cmd_id}")
                 cmd.status = CommandStatus.timeout
                 continue
 
-        # Wait for completion with timeout
-        complete_start = time.time()
-        while time.time() - complete_start < cmd.timeout_s:
-            if cmd.status == CommandStatus.complete:
-                break
-            await asyncio.sleep(0.05)
+            # Send command to all connected clients
+            msg = {
+                "type": cmd.msg_type,
+                "cmd_id": cmd.cmd_id,
+                "data": cmd.payload
+            }
 
-        if cmd.status != CommandStatus.complete:
-            print(f"[Dispatcher] Command {cmd.cmd_id} completion timeout")
-            cmd.status = CommandStatus.timeout
+            for ws in list(_ws_clients):
+                try:
+                    await ws.send_json(msg)
+                    cmd.status = CommandStatus.sent
+                    cmd.sent_at = time.time()
+                    print(f"[Dispatcher] Sent {cmd.msg_type} command {cmd.cmd_id}")
+                except Exception as e:
+                    print(f"[Dispatcher] Error sending to client: {e}")
+
+            # Wait for ACK with timeout
+            ack_timeout = 0.5
+            ack_start = time.time()
+            while time.time() - ack_start < ack_timeout:
+                if cmd.status == CommandStatus.acked:
+                    break
+                await asyncio.sleep(0.01)
+
+            if cmd.status != CommandStatus.acked:
+                print(f"[Dispatcher] Command {cmd.cmd_id} ACK timeout")
+                # Retry once
+                for ws in list(_ws_clients):
+                    try:
+                        await ws.send_json(msg)
+                        print(f"[Dispatcher] Retried command {cmd.cmd_id}")
+                    except:
+                        pass
+
+                await asyncio.sleep(ack_timeout)
+                if cmd.status != CommandStatus.acked:
+                    cmd.status = CommandStatus.timeout
+                    continue
+
+            # Wait for completion with timeout
+            complete_start = time.time()
+            while time.time() - complete_start < cmd.timeout_s:
+                if cmd.status == CommandStatus.complete:
+                    break
+                await asyncio.sleep(0.05)
+
+            if cmd.status != CommandStatus.complete:
+                print(f"[Dispatcher] Command {cmd.cmd_id} completion timeout")
+                cmd.status = CommandStatus.timeout
+
+        except asyncio.CancelledError:
+            print("[Dispatcher] Runner cancelled")
+            raise
+        except Exception as e:
+            print(f"[Dispatcher] ERROR in runner loop: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # ============================================================
