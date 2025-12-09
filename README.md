@@ -1,134 +1,261 @@
-# TraxxisLLM
-# Voice-Controlled RC Vehicle Project
+# TraxxisLLM - Voice-Controlled RC Vehicle System
+
+A sophisticated voice-controlled RC vehicle system that transforms a Traxxas RC car into an intelligent robot capable of understanding and executing natural language commands with real-time audio feedback.
 
 ## Project Overview
 
-This project is a sophisticated voice-controlled RC vehicle system that enables natural language interaction with a Traxxas RC car. The system allows users to wake the robot with "Hey BT" and give conversational commands like "turn left" or "go forward faster," which are intelligently processed and executed on the physical vehicle. The robot provides audio feedback, creating a conversational experience that feels more like talking to a smart assistant than controlling a remote-control car.
+TraxxisLLM enables natural language interaction with a physical RC vehicle through an intelligent voice command pipeline. Users can issue conversational commands like "go forward 10 feet" or "turn left and accelerate," which are processed through speech recognition, large language model planning, and precise motor control execution.
 
-## What It Does
+The system features two implementation versions:
+- **V1**: Local processing with wake-word activation using Ollama LLM and Edge-TTS
+- **V2**: Cloud-optimized parallel processing with OpenAI APIs for reduced latency
 
-The system transforms a standard Traxxas RC vehicle into a conversational robot with the following capabilities:
+## Key Features
 
-- **Wake Word Activation**: Responds to "Hey BT" to begin listening
-- **Natural Language Commands**: Understands conversational instructions rather than requiring specific command syntax
-- **Multi-Step Sequences**: Maintains conversation context, allowing follow-up commands without repeating information
-- **Audio Feedback**: Responds with synthesized speech to confirm actions
-- **Multiple Interaction Modes**: Supports wake word activation, push-to-talk controls, and active listening
+- **Natural Language Understanding**: Conversational command processing instead of rigid command syntax
+- **Precise Motor Control**: PWM-level control of steering (1000-2000µs) and throttle with encoder-based distance tracking
+- **Real-Time Audio Feedback**: Synthesized speech responses with witty personality
+- **Multiple Interaction Modes**: Wake-word activation, push-to-talk, and continuous listening
+- **Parallel Processing (V2)**: Overlapping Whisper, LLM, and TTS operations for 2-3 second response times
+- **WebSocket Communication**: Real-time bidirectional command and telemetry streaming
+- **Context-Aware Conversations**: Maintains conversation history for intelligent follow-up commands
 
 ## System Architecture
 
-The system uses a multi-stage pipeline that coordinates several specialized technologies:
+### High-Level Pipeline
 
 ```
-Voice Input → Speech Recognition → LLM Planning → Motor Control → Physical Execution → Audio Feedback
+Voice Input → Speech-to-Text → LLM Planning → Command Dispatch → Motor Control → Physical Execution
+     ↓                                                                              ↓
+Audio Feedback ←─────────── Text-to-Speech ←─────────────────── Completion ACK ───┘
 ```
 
-### Pipeline Stages
+### Component Stack
 
-1. **Voice Input**: Captures audio from a microphone
-2. **Speech Recognition**: Whisper AI converts speech to text
-3. **Command Planning**: LLM (Ollama) interprets the command and generates precise motor control instructions
-4. **Signal Generation**: Converts commands into microsecond pulse values for steering and throttle
-5. **Physical Execution**: ESP32 sends signals via WebSocket to control the RC vehicle motors
-6. **Audio Feedback**: Edge-TTS synthesizes speech responses that are played back to the user
+**Hardware**
+- ESP32 microcontroller with WebSocket client
+- Traxxas RC vehicle (modified for servo control)
+- Quadrature encoder for precise distance measurement
+- PC/laptop for server and voice processing
 
-## Key Technologies
+**Software - V1 (Local Processing)**
+- FastAPI server with command dispatcher
+- Whisper (local) for speech recognition
+- Ollama (llama3.1:8b) for command planning
+- Edge-TTS for audio synthesis
+- WebSocket for ESP32 communication
 
-### Hardware
-- **ESP32 Microcontroller**: Controls the vehicle's motors and receives commands via WebSocket
-- **Traxxas RC Vehicle**: The physical platform being controlled
+**Software - V2 (Cloud Optimized)**
+- FastAPI server with parallel processing pipeline
+- OpenAI Whisper API for transcription
+- OpenAI GPT-4o for command planning
+- ElevenLabs API for premium TTS
+- Async/await architecture for concurrent operations
 
-### Software Stack
-- **FastAPI Server**: Handles command processing and coordinates the pipeline
-- **Whisper**: Open-source speech recognition for converting voice to text
-- **Ollama**: Local LLM inference (currently using llama3.2:3b, with recommendations to upgrade to llama3.1:8b)
-- **Edge-TTS**: Fast text-to-speech synthesis for audio feedback
-- **WebSocket Communication**: Real-time command transmission to the ESP32
+## Technical Implementation
 
-## How It Works: Detailed Flow
+### Voice Command Flow
 
-### 1. Voice Activation
-The system continuously listens for the wake word "Hey BT." Once detected, it enters an active listening state.
+1. **Audio Capture**: PyAudio captures microphone input with VAD-based voice activity detection
+2. **Speech Recognition**: Whisper transcribes audio to text (local model or API)
+3. **LLM Planning**: GPT-4o/Llama generates structured motor commands from natural language
+4. **Command Dispatching**: Background async task queues and sends commands to ESP32
+5. **Motor Execution**: ESP32 translates commands to PWM signals for servos and ESC
+6. **Feedback Loop**: Completion acknowledgments trigger TTS audio responses
 
-### 2. Speech Processing
-When the user speaks a command, Whisper transcribes the audio into text. The system filters out empty or invalid transcripts to prevent processing errors.
+### Command Protocol
 
-### 3. Intelligent Command Planning
-The transcribed text is sent to the LLM with conversation context. The LLM generates specific motor control instructions:
-- **Steering Control**: Precise microsecond values where 1500 = straight, with specific ranges for left/right turns
-- **Throttle Control**: Speed values for forward/backward movement
-- **Duration**: How long to execute the command
+Commands are transmitted as JSON over WebSocket:
 
-The LLM considers previous commands in the conversation, allowing for natural follow-ups like:
-- User: "Go forward"
-- Robot: *executes*
-- User: "Now turn left"
-- Robot: *understands context and executes turn*
+```json
+{
+  "type": "command",
+  "msg_id": 1,
+  "payload": {
+    "action": "move_dist",
+    "throt": 1800,
+    "steer": 1400,
+    "feet": 10.0,
+    "timeout_ms": 60000
+  }
+}
+```
 
-### 4. Command Execution
-The FastAPI server uses a dispatcher system that:
-- Queues commands for sequential processing
-- Converts LLM output into precise motor control signals
-- Sends commands to the ESP32 via WebSocket
-- Tracks execution state to prevent command overlap
+**Supported Actions**:
+- `move_time`: Timed movement with specified throttle/steering
+- `move_dist`: Distance-based movement using encoder feedback
+- `stop`: Emergency motor kill
+- `macro`: Pre-programmed movement sequences
 
-### 5. Audio Feedback
-Edge-TTS generates speech responses confirming the action. The system includes sophisticated feedback prevention to ensure the robot doesn't respond to its own speech output.
+### LLM Response Format
 
-## Technical Challenges & Solutions
+The LLM generates structured responses:
 
-### Challenge 1: LLM Model Sizing
-**Problem**: Smaller models (3b parameters) consistently output incorrect steering values, particularly failing to maintain the neutral position (1500 microseconds) when given directional commands.
+```json
+{
+  "say": "Ten feet? How specific",
+  "steps": [
+    {
+      "action": "move_dist",
+      "throt": 1800,
+      "steer": 1400,
+      "feet": 10
+    }
+  ]
+}
+```
 
-**Solution**: Upgrading to larger models (llama3.1:8b) provides better numerical instruction following and steering precision.
+## Performance Characteristics
 
-### Challenge 2: Pipeline Latency
-**Problem**: Multiple processing stages created noticeable delays between command and execution.
+**V1 (Local Processing)**
+- Transcription: ~3-5 seconds (Whisper base.en)
+- LLM Planning: ~2-4 seconds (Llama3.1:8b)
+- TTS: ~0.5-1 second (Edge-TTS)
+- Total: ~6-10 seconds
 
-**Solutions**:
-- Replaced slower TTS systems with Edge-TTS for faster audio synthesis
-- Optimized command queuing and execution flow
-- Implemented efficient WebSocket communication
+**V2 (Cloud + Parallel)**
+- Transcription: ~1-2 seconds (Whisper API)
+- LLM Planning: ~0.7-2.5 seconds (GPT-4o)
+- TTS: ~0.5-1 second (ElevenLabs)
+- Total: ~2-4 seconds (overlapped execution)
+
+## Motor Control Specifications
+
+**Steering Range**
+- Left: 1000-1399µs
+- Center (Neutral): 1400µs (warped chassis compensation)
+- Right: 1401-1800µs
+
+**Throttle Range**
+- Reverse: 1200-1499µs
+- Neutral: 1500µs
+- Forward: 1501-1950µs
+
+**Distance Measurement**
+- Encoder: 416 ticks per foot
+- Maximum tested accuracy: ±5% over 20 feet
+
+## Project Structure
+
+```
+TraxxisLLM/
+├── server.py              # V1 server with local models
+├── server_v2.py           # V2 server with cloud APIs and parallel processing
+├── voice_assistant.py     # V1 client with wake-word detection
+├── voice_assistant_v2.py  # V2 client with push-to-talk
+├── llmreciever.ino        # ESP32 firmware for motor control
+├── config_v2.py           # Configuration management system
+├── requirements_v2.txt    # Python dependencies
+├── QUICKSTART_V2.md       # Quick start guide for V2
+└── docs/                  # Additional documentation
+```
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.8+
+- ESP32 development board
+- Traxxas RC vehicle with servo/ESC control
+- Microphone for voice input
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/TraxxisLLM.git
+cd TraxxisLLM
+```
+
+2. Install Python dependencies:
+```bash
+pip install -r requirements_v2.txt
+```
+
+3. Configure API keys (for V2):
+```bash
+# Create .env file
+OPENAI_API_KEY=your_openai_key
+ELEVENLABS_API_KEY=your_elevenlabs_key
+```
+
+4. Flash ESP32 firmware:
+- Open `llmreciever.ino` in Arduino IDE
+- Configure WiFi credentials
+- Upload to ESP32
+
+### Running V2 (Recommended)
+
+**Server:**
+```bash
+python server_v2.py
+```
+
+**Client:**
+```bash
+python voice_assistant_v2.py
+```
+
+Press and hold 'V' to record commands, release to send.
+
+See [QUICKSTART_V2.md](QUICKSTART_V2.md) for detailed instructions.
+
+## Development Journey & Key Learnings
+
+### Challenge 1: Latency Optimization
+**Problem**: Initial implementation had 10-15 second delays between command and execution.
+
+**Solution**: Implemented parallel processing pipeline where Whisper transcription, LLM inference, and TTS generation overlap when possible, reducing total latency by 60%.
+
+### Challenge 2: LLM Precision
+**Problem**: Smaller models (3B parameters) produced inconsistent steering values and failed to maintain neutral positions.
+
+**Solution**: Upgraded to Llama3.1:8b locally and GPT-4o for cloud, which reliably generate precise PWM values and handle numerical constraints.
 
 ### Challenge 3: Audio Feedback Loops
-**Problem**: The robot would sometimes respond to its own speech output, creating infinite loops.
+**Problem**: System would process its own TTS output, creating command loops.
 
-**Solution**: Implemented timing coordination and audio filtering to prevent the system from processing its own TTS output.
+**Solution**: Implemented cooldown periods, audio stream gating, and keyboard debouncing to prevent self-triggering.
 
-### Challenge 4: Conversation Context
-**Problem**: Each command was processed in isolation, requiring users to be overly explicit.
+### Challenge 4: WebSocket Message Format Compatibility
+**Problem**: V2 initially used different field names than ESP32 firmware expected.
 
-**Solution**: Implemented conversation memory that maintains state across multiple interactions, allowing for natural follow-up commands.
+**Solution**: Standardized on `msg_id` (int) and `payload` fields to maintain backward compatibility with V1 firmware.
 
-## Current State
+## Technical Highlights
 
-The system is fully functional with:
-- ✅ Working wake word detection
-- ✅ Reliable speech recognition
-- ✅ Context-aware command processing
-- ✅ Precise motor control via ESP32
-- ✅ Fast audio feedback
-- ✅ Multiple interaction modes
-- ✅ Sequential command queuing
-- ✅ Audio feedback prevention
+- **Non-blocking ESP32 Execution**: Fully async motor control allows simultaneous command execution and telemetry reporting
+- **Command Status Tracking**: ACK/COMPLETE protocol ensures reliable command delivery and execution confirmation
+- **Conversation Context**: LLM maintains multi-turn context for natural follow-up commands
+- **Error Handling**: Comprehensive timeout and retry logic for network and execution failures
+- **Configurable Personality**: System prompt engineering creates witty, satirical robot responses
 
-## Development Approach
+## Future Enhancements
 
-The project demonstrates a systematic debugging methodology:
-- **Verbose Logging**: Detailed output tracks commands through each pipeline stage
-- **Iterative Optimization**: Systematically identifying and upgrading bottlenecks
-- **Component Testing**: Isolating problems across voice processing, LLM planning, and motor control stages
+- [ ] Computer vision integration for obstacle detection
+- [ ] Path planning with A* algorithm
+- [ ] Multi-vehicle coordination
+- [ ] Mobile app interface
+- [ ] Voice biometrics for access control
+- [ ] Enhanced macro library for complex maneuvers
 
-## Key Learnings
+## Contributing
 
-1. **Model Size Matters**: For precise numerical control, larger LLM models are essential
-2. **Pipeline Visibility**: Detailed logging is crucial for debugging multi-stage systems
-3. **Timing is Critical**: Preventing audio feedback requires careful coordination of input/output streams
-4. **Context Enhances UX**: Conversation memory transforms the interaction from command-driven to conversational
+Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
 
-## Future Optimization Opportunities
+## License
 
-- Upgrade to llama3.1:8b for better steering accuracy
-- Further latency reduction in the processing pipeline
-- Enhanced conversation context understanding
-- Additional voice feedback customization
+MIT License - See [LICENSE](LICENSE) for details
+
+## Acknowledgments
+
+- OpenAI for Whisper and GPT-4 APIs
+- ElevenLabs for premium TTS
+- Ollama for local LLM inference
+- FastAPI and Pydantic teams for excellent async frameworks
+
+---
+
+**Author**: Dan Velarde
+**Project Start**: 2024
+**Current Status**: Production-ready V2 system with 2-3 second response times

@@ -509,12 +509,12 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
       ws_connected = false;
-      Serial.println("\n[WS] ❌ Disconnected from server");
+      Serial.println("\n[WS] Disconnected from server");
       break;
-      
+
     case WStype_CONNECTED:
       ws_connected = true;
-      Serial.println("\n[WS] ✓ Connected to server!");
+      Serial.println("\n[WS] Connected to server");
       sendHealthPing();  // Send one on connect
       break;
       
@@ -528,18 +528,18 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
         
         // Skip logging health messages
         if (strcmp(type, "health") != 0) {
-          Serial.print("[WS] ⬇ Received: ");
+          Serial.print("[WS] Received: ");
           Serial.write(payload, length);
           Serial.println();
           Serial.printf("[WS] Message type: '%s'\n", type);
         }
-        
+
         if (strcmp(type, "command") == 0) {
           executeCommand(doc);
         }
         // No need to log health - they're just keepalives
       } else {
-        Serial.printf("[WS] ❌ JSON parse error: %s\n", error.c_str());
+        Serial.printf("[WS] JSON parse error: %s\n", error.c_str());
       }
       
       break;
@@ -569,12 +569,12 @@ void setup() {
   Serial.println("[INIT] Attaching servo outputs...");
   throttleServo.attach(THROTTLE_PIN, 1000, 2000);  // Min 1000µs, Max 2000µs
   steeringServo.attach(STEERING_PIN, 1000, 2000);
-  Serial.printf("  ✓ Throttle ESC on pin %d\n", THROTTLE_PIN);
-  Serial.printf("  ✓ Steering servo on pin %d\n", STEERING_PIN);
-  
+  Serial.printf("  [OK] Throttle ESC on pin %d\n", THROTTLE_PIN);
+  Serial.printf("  [OK] Steering servo on pin %d\n", STEERING_PIN);
+
   // Set neutral position
   stopMotors();
-  Serial.println("  ✓ Servos initialized at neutral (1500µs)");
+  Serial.println("  [OK] Servos initialized at neutral (1500µs)");
   
   // Initialize encoder pins
   Serial.println("\n[INIT] Setting up encoder...");
@@ -584,10 +584,10 @@ void setup() {
   // Attach interrupts for encoder
   attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_B), encoderISR, CHANGE);
-  
-  Serial.printf("  ✓ Encoder A on pin %d (interrupt)\n", ENCODER_PIN_A);
-  Serial.printf("  ✓ Encoder B on pin %d (interrupt)\n", ENCODER_PIN_B);
-  Serial.println("  ✓ Quadrature decoding active");
+
+  Serial.printf("  [OK] Encoder A on pin %d (interrupt)\n", ENCODER_PIN_A);
+  Serial.printf("  [OK] Encoder B on pin %d (interrupt)\n", ENCODER_PIN_B);
+  Serial.println("  [OK] Quadrature decoding active");
   
   // Connect to WiFi
   Serial.println("\n[INIT] Connecting to WiFi...");
@@ -607,18 +607,18 @@ void loop() {
     last_wifi_check = millis();
     if (WiFi.status() == WL_CONNECTED) {
       wifi_connected = true;
-      Serial.println(" ✓ Connected!");
+      Serial.println(" [OK] Connected");
       Serial.printf("  IP Address: %s\n", WiFi.localIP().toString().c_str());
-      
+
       // Start WebSocket
       Serial.println("\n[INIT] Starting WebSocket client...");
       Serial.printf("  Server: ws://%s:%d%s\n", WS_HOST, WS_PORT, WS_PATH);
       webSocket.begin(WS_HOST, WS_PORT, WS_PATH);
       webSocket.onEvent(webSocketEvent);
       webSocket.setReconnectInterval(5000);
-      
+
       Serial.println("\n════════════════════════════════════════════════════════════");
-      Serial.println("  ✓ SYSTEM READY - Waiting for voice commands");
+      Serial.println("  [READY] System ready - Waiting for voice commands");
       Serial.println("════════════════════════════════════════════════════════════\n");
     } else {
       Serial.print(".");

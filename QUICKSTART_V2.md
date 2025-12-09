@@ -128,4 +128,4 @@ If you encounter issues:
 
 ---
 
-**Ready to go! Hold 'V' and start talking to BT! 🚀**
+**Ready to go! Hold 'V' and start talking to BT!**
