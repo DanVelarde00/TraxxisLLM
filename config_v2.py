@@ -31,7 +31,7 @@ class VoiceAssistantConfig:
 
     # ===== SERVER SETTINGS =====
     server_host: str = "0.0.0.0"
-    server_port: int = 8001  # Different from V1 (port 8000)
+    server_port: int = 8000  # Same as V1 - switch between V1/V2 by running different server
 
     # ===== DIRECTORY SETTINGS =====
     base_dir: Path = field(default_factory=lambda: Path(__file__).parent)
